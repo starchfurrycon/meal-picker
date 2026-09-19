@@ -86,6 +86,12 @@ if (!bin) {
   process.exit(0);
 }
 
+// CDP 需要 WebSocket。Node 22+ 才有全局 WebSocket；更早的版本明确跳过，不报错。
+if (typeof WebSocket === 'undefined') {
+  console.log(`跳过：Node ${process.version} 没有全局 WebSocket，请用 Node 22+ 运行本自检`);
+  process.exit(0);
+}
+
 /* ══════════ 假 LLM 服务 ══════════ */
 const MODEL_REPLY = {
   kw: ['酸菜鱼', '水煮鱼', '川味小炒'],
@@ -100,6 +106,9 @@ const MODEL_REPLY = {
 async function submitAndWait(cdp, query, { maxWaitMs = 45000 } = {}) {
   if (relayUp) startFeeder(['meituan', 'eleme', 'jd', 'taobao']);
   try {
+    // 上一轮的结果可能还留在 DOM 里，而 dataset.view 在提交的那一刻就变成 thinking 了。
+    // 先把旧卡片抹掉，这样"等到 .card 出现"才是真的等到本轮渲染完，而不是看到上一轮。
+    await cdp.eval('document.querySelector("#result-scroll").replaceChildren(); true');
     await cdp.eval(`(() => {
       const i = document.querySelector('#ask-input');
       i.value = ${JSON.stringify(query)};
@@ -109,10 +118,11 @@ async function submitAndWait(cdp, query, { maxWaitMs = 45000 } = {}) {
     })()`);
     const end = Date.now() + maxWaitMs;
     while (Date.now() < end) {
-      if (await cdp.eval('document.body.dataset.view') === 'result') break;
+      const ready = await cdp.eval('document.body.dataset.view === "result" && !!document.querySelector(".card")');
+      if (ready) break;
       await sleep(200);
     }
-    await sleep(400);
+    await sleep(300);
   } finally {
     stopFeeder();
   }

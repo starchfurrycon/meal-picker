@@ -121,8 +121,13 @@ log(`  单文件体积：${(statSync(singlePath).size / 1024).toFixed(1)} KB`);
 const collectorOut = join(dist, 'meal-picker-collector.user.js');
 const collectorSrcFile = join(root, 'collector', 'meal-picker-collector.user.js');
 if (existsSync(collectorSrcFile)) {
-  // 下载版把端口占位符换成默认值，直接装也能用（中继默认 8765）
-  writeFileSync(collectorOut, readFileSync(collectorSrcFile, 'utf8').replace('__RELAY_PORT__', '8765'), 'utf8');
+  const src = readFileSync(collectorSrcFile, 'utf8')
+    // 下载版把端口占位符换成默认值，直接装也能用（中继默认 8765）
+    .replace('__RELAY_PORT__', '8765')
+    // 版本号以 package.json 为准，避免源码里手写的版本跟发行版对不上
+    .replace(/(\/\/ @version\s+)\S+/, `$1${version}`)
+    .replace(/(const VERSION = ')[^']*(')/, `$1${version}$2`);
+  writeFileSync(collectorOut, src, 'utf8');
   log(`  采集器脚本：${(statSync(collectorOut).size / 1024).toFixed(1)} KB`);
 }
 

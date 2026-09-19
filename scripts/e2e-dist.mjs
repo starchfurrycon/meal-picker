@@ -18,12 +18,23 @@ const root = join(here, '..');
 
 const BROWSERS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
   '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
+  '/snap/bin/chromium',
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 ];
 const bin = BROWSERS.find((p) => existsSync(p));
 if (!bin) { console.log('跳过：本机没有 Chrome/Edge'); process.exit(0); }
+
+// CDP 需要 WebSocket。Node 22+ 才有全局 WebSocket；更早的版本明确跳过，不报错。
+if (typeof WebSocket === 'undefined') {
+  console.log(`跳过：Node ${process.version} 没有全局 WebSocket，请用 Node 22+ 运行本自检`);
+  process.exit(0);
+}
 
 const singleSrc = join(root, 'dist', 'meal-picker.html');
 const dirSrc = join(root, 'dist', 'web', 'index.html');

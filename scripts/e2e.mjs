@@ -153,6 +153,12 @@ if (!bin) {
   process.exit(0);
 }
 
+// CDP 需要 WebSocket。Node 22+ 才有全局 WebSocket；更早的版本明确跳过，不报错。
+if (typeof WebSocket === 'undefined') {
+  console.log(`跳过：Node ${process.version} 没有全局 WebSocket，请用 Node 22+ 运行本自检`);
+  process.exit(0);
+}
+
 const PORT = 9333 + Math.floor(Math.random() * 400);
 const profile = mkdtempSync(join(tmpdir(), 'mealpicker-e2e-'));
 
