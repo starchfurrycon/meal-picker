@@ -8,7 +8,7 @@ on:
       tag:
         description: '要发布的 tag（例如 v1.0.0）'
         required: true
-        default: 'v2.0.0'
+        default: 'v2.1.0'
 
 permissions:
   contents: write
@@ -41,6 +41,9 @@ jobs:
       - name: 重新生成插画内联资源
         run: node scripts/embed-art.mjs
 
+      - name: 生成采集器与平台地址
+        run: node scripts/gen-collector.mjs
+
       - name: 打包
         run: node scripts/build.mjs
 
@@ -69,21 +72,22 @@ jobs:
           body: |
             ## 选餐 ${{ steps.ver.outputs.tag }}
 
-            实时比价需要 **本地中继 + 浏览器采集器**，三步装好，见下方说明。
+            **零安装**：启动中继后，它会自己拉起一个浏览器并注入采集器，
+            你只需要在那个窗口里登录一次平台。想用自己的浏览器，再到设置里切成油猴模式。
 
             | 文件 | 说明 |
             | --- | --- |
             | `meal-picker-${{ steps.ver.outputs.version }}.zip` | **推荐**：单文件版 + 目录版 + `relay/` 中继 + `collector/` 采集器 + 插画源文件 |
-            | `meal-picker-collector.user.js` | 采集器用户脚本（油猴里装这一个） |
-            | `meal-picker.html` | 单文件版，需配合中继与采集器才有实时价 |
+            | `meal-picker-collector.user.js` | 采集器用户脚本（只在"用我自己的浏览器"模式下需要） |
+            | `meal-picker.html` | 单文件版，需配合中继才有实时价 |
             | `SHA256SUMS.txt` | 校验和 |
 
-            ### 三步
+            ### 两步
 
             1. 解压 zip，`node relay/server.mjs`（Windows 可双击 `relay/启动.cmd`）——
                它会自动打开 <http://127.0.0.1:8765/>
-            2. 打开 <http://127.0.0.1:8765/install>，按提示把采集器装进 Tampermonkey
-            3. 在浏览器里登录一次美团外卖 / 淘宝闪购 / 京东，然后就能用了
+            2. 在工具页面输入一句话点「开始筛选」。中继会自动拉起浏览器、装好采集器、
+               打开各平台搜索页；在那个窗口里登录一次美团 / 淘宝闪购 / 京东即可
 
             > **没有模拟数据。** 拿不到实时价时工具会直接说明缺哪个平台，不会编造价格。
             > 价格来自你自己浏览器里、你自己账号可见的页面数据；列表页报价仅供参考，

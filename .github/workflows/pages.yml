@@ -27,6 +27,9 @@ jobs:
       - name: 重新生成插画内联资源
         run: node scripts/embed-art.mjs
 
+      - name: 生成采集器与平台地址
+        run: node scripts/gen-collector.mjs
+
       - name: 打包
         run: node scripts/build.mjs
 
