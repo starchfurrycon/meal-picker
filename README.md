@@ -55,13 +55,22 @@ node scripts/probe-realtime.mjs
 
 需要 Node 18+。**零依赖，不用 npm install。**
 
+从 [Releases](https://github.com/starchfurrycon/meal-picker/releases) 下载
+`meal-picker-2.0.0.zip` 解压，然后：
+
+```bash
+node relay/server.mjs
+```
+
+也可以直接克隆仓库：
+
 ```bash
 git clone https://github.com/starchfurrycon/meal-picker.git
 cd meal-picker
 node relay/server.mjs
 ```
 
-Windows 上也可以双击 `relay/启动.cmd`。
+Windows 上双击 `relay/启动.cmd` 更省事。
 
 它会自动打开 <http://127.0.0.1:8765/>，这就是工具页面。
 
@@ -72,6 +81,9 @@ Windows 上也可以双击 `relay/启动.cmd`。
 <http://127.0.0.1:8765/install>
 
 按页面提示点一下安装即可。装完工具栏会出现油猴图标。
+
+> 没有中继、只想单独装采集器？从 Releases 下载 `meal-picker-collector.user.js`，
+> 拖进油猴的「实用工具 → 安装」就行（默认连 `127.0.0.1:8765`）。
 
 ### 3. 在各平台登录一次
 
