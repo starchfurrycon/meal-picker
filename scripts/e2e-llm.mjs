@@ -74,6 +74,9 @@ function startFeeder(platforms) {
 }
 function stopFeeder() { if (feeder) { clearInterval(feeder); feeder = null; } }
 
+/** 容器/CI 里常以 root 运行，Chrome 沙箱会直接拒绝启动 */
+const NO_SANDBOX = process.platform === 'linux' && (process.getuid?.() === 0 || !!process.env.CI);
+const SANDBOX_ARGS = NO_SANDBOX ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
 const BROWSERS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -169,7 +172,7 @@ const baseUrl = `http://127.0.0.1:${port}/v1`;
 /* ══════════ 浏览器 ══════════ */
 const DEBUG_PORT = 9800 + Math.floor(Math.random() * 400);
 const profile = mkdtempSync(join(tmpdir(), 'mealpicker-llm-'));
-const chrome = spawn(bin, [
+const chrome = spawn(bin, [...SANDBOX_ARGS, 
   '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--disable-extensions', '--hide-scrollbars', '--allow-file-access-from-files',
   `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`, 'about:blank',

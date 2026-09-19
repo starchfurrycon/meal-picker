@@ -35,6 +35,9 @@ if (!BROWSERS.some((p) => existsSync(p))) {
   process.exit(0);
 }
 
+/** 容器/CI 里常以 root 运行，Chrome 沙箱会直接拒绝启动 */
+const NO_SANDBOX = process.platform === 'linux' && (process.getuid?.() === 0 || !!process.env.CI);
+const SANDBOX_ARGS = NO_SANDBOX ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0; let fail = 0;
 async function check(name, fn) {
@@ -54,7 +57,7 @@ async function launchPage(url) {
   const bin = BROWSERS.find((p) => existsSync(p));
   const port = 22000 + Math.floor(Math.random() * 800);
   const profile = mkdtempSync(join(tmpdir(), 'mp-e2ebr-'));
-  const child = spawn(bin, [
+  const child = spawn(bin, [...SANDBOX_ARGS, 
     '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
     '--hide-scrollbars', '--window-size=430,932',
     `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, url,

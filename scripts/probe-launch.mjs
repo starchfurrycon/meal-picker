@@ -30,6 +30,9 @@ const BROWSERS = [
 const picked = BROWSERS.find((b) => existsSync(b.path));
 if (!picked) { console.log('跳过：没有浏览器'); process.exit(0); }
 
+/** 容器/CI 里常以 root 运行，Chrome 沙箱会直接拒绝启动 */
+const NO_SANDBOX = process.platform === 'linux' && (process.getuid?.() === 0 || !!process.env.CI);
+const SANDBOX_ARGS = NO_SANDBOX ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const work = mkdtempSync(join(tmpdir(), 'mp-launchprobe-'));
 
@@ -79,7 +82,7 @@ const COLLECTOR = `
 
 const DEBUG_PORT = 10900 + Math.floor(Math.random() * 300);
 const profile = join(work, 'profile');
-const browser = spawn(picked.path, [
+const browser = spawn(picked.path, [...SANDBOX_ARGS, 
   '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--no-default-browser-check', '--disable-features=Translate',
   `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`,

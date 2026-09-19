@@ -24,9 +24,13 @@ const BROWSERS = [
 const bin = BROWSERS.find((p) => existsSync(p));
 if (!bin) { console.log('没有浏览器'); process.exit(0); }
 
+/** 容器/CI 里常以 root 运行，Chrome 沙箱会直接拒绝启动 */
+const NO_SANDBOX = process.platform === 'linux' && (process.getuid?.() === 0 || !!process.env.CI);
+const SANDBOX_ARGS = NO_SANDBOX ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
+
 const PORT = 10600 + Math.floor(Math.random() * 300);
 const profile = mkdtempSync(join(tmpdir(), 'mp-diag-'));
-const chrome = spawn(bin, [
+const chrome = spawn(bin, [...SANDBOX_ARGS,
   '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--hide-scrollbars', `--window-size=${W},${H}`,
   `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, 'about:blank',

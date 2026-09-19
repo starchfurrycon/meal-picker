@@ -142,6 +142,10 @@ export async function startManagedBrowser({
     '--hide-crash-restore-bubble',
     '--disable-session-crashed-bubble',
   ];
+  // 容器/CI 里常以 root 运行，Chrome 沙箱会直接拒绝启动
+  if (process.platform === 'linux' && (process.getuid?.() === 0 || process.env.CI)) {
+    args.push('--no-sandbox', '--disable-dev-shm-usage');
+  }
   if (useHeadless) args.push('--headless=new', '--disable-gpu');
 
   log(`拉起浏览器：${picked.name}（独立配置目录，不影响你日常用的浏览器）`);
