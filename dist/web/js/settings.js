@@ -561,7 +561,7 @@ function renderPrivacy() {
     renderSheet();
   });
   pane.append(wipeBtn);
-  pane.append(el('div', { class: 'field__hint', text: '包括平台账户、API Key、口味偏好、历史与用量统计，全部从本机移除。' }));
+  pane.append(el('div', { class: 'field__hint', text: '包括平台账户、API Key、口味偏好与用量统计，全部从本机移除。' }));
 
   return pane;
 }

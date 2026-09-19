@@ -304,15 +304,6 @@ async function run(query, { reroll = false } = {}) {
   renderResult(lastCtx);
   showView('result');
   sendBtn.disabled = false;
-
-  store.pushHistory({
-    q: query,
-    at: Date.now(),
-    keywords: parsed.keywords,
-    pick: `${best.merchant} · ${best.package.dish}`,
-    price: best.package.finalPrice,
-    platform: best.platform,
-  });
   renderHome(store);
 }
 

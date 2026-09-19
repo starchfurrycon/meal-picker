@@ -10,11 +10,8 @@ import { Vault, CRYPTO_MODE, deviceFingerprint } from './crypto.js';
 import { dayKey } from './util.js';
 
 const K_SETTINGS = 'mealpicker.settings.v1';
-const K_HISTORY = 'mealpicker.history.v1';
 const K_USAGE = 'mealpicker.usage.v1';
 const K_VAULT = 'mealpicker.vault.v1';
-
-const MAX_HISTORY = 30;
 
 function readJSON(key, fallback) {
   try {
@@ -43,7 +40,6 @@ function merge(base, patch) {
 export class Store {
   constructor() {
     this.settings = this._loadSettings();
-    this.history = readJSON(K_HISTORY, []);
     this.usage = readJSON(K_USAGE, { days: {}, totalCalls: 0, totalTokensIn: 0, totalTokensOut: 0, totalCost: 0 });
     this.vault = new Vault(K_VAULT);
     this.cryptoMode = CRYPTO_MODE;
@@ -146,14 +142,6 @@ export class Store {
     return r;
   }
 
-  /* ───── 历史 ───── */
-
-  pushHistory(entry) {
-    this.history = [entry, ...this.history.filter((h) => h.q !== entry.q)].slice(0, MAX_HISTORY);
-    writeJSON(K_HISTORY, this.history);
-  }
-  clearHistory() { this.history = []; writeJSON(K_HISTORY, []); }
-
   /* ───── LLM 用量 / 费用 ───── */
 
   recordUsage({ tokensIn = 0, tokensOut = 0, cost = 0, model = '', mode = '' } = {}) {
@@ -193,7 +181,6 @@ export class Store {
       app: 'meal-picker',
       exportedAt: new Date().toISOString(),
       settings: this.settings,
-      history: this.history,
       usage: this.usage,
     };
     if (includeSecrets) payload.credentials = this.credentials;
@@ -205,7 +192,6 @@ export class Store {
     try { obj = JSON.parse(text); } catch { return { ok: false, error: '不是合法的 JSON' }; }
     if (!obj || obj.app !== 'meal-picker') return { ok: false, error: '不是本工具导出的文件' };
     if (obj.settings) this.saveSettings(obj.settings);
-    if (Array.isArray(obj.history)) { this.history = obj.history.slice(0, MAX_HISTORY); writeJSON(K_HISTORY, this.history); }
     if (obj.usage) { this.usage = merge(this.usage, obj.usage); writeJSON(K_USAGE, this.usage); }
     if (obj.credentials && !this.vault.locked) {
       const data = this.vault.data();
@@ -216,14 +202,12 @@ export class Store {
     return { ok: true };
   }
 
-  /** 彻底清除：设置、历史、用量、凭据、设备密钥 */
+  /** 彻底清除：设置、用量、凭据、设备密钥 */
   wipeAll() {
     try { localStorage.removeItem(K_SETTINGS); } catch { /* ignore */ }
-    try { localStorage.removeItem(K_HISTORY); } catch { /* ignore */ }
     try { localStorage.removeItem(K_USAGE); } catch { /* ignore */ }
     this.vault.destroy();
     this.settings = structuredClone(DEFAULT_SETTINGS);
-    this.history = [];
     this.usage = { days: {}, totalCalls: 0, totalTokensIn: 0, totalTokensOut: 0, totalCost: 0 };
     this._emit();
   }
@@ -231,7 +215,7 @@ export class Store {
   /** 存储占用（字节，粗略） */
   storageBytes() {
     let n = 0;
-    for (const k of [K_SETTINGS, K_HISTORY, K_USAGE, K_VAULT]) {
+    for (const k of [K_SETTINGS, K_USAGE, K_VAULT]) {
       try { n += (localStorage.getItem(k) || '').length; } catch { /* ignore */ }
     }
     return n * 2; // UTF-16
