@@ -244,6 +244,15 @@ try {
     console.log(`      卡片：${o.price} · ${o.reasons} 条理由`);
   });
 
+  await check('file:// 下也能连上本地中继（README 里承诺过）', async () => {
+    const s = await cdp.eval(`(async () => {
+      const r = await __mealPicker.probeRelay(__mealPicker.store.settings);
+      return JSON.stringify({ ok: !!r.ok, mixed: !!r.mixedContent, err: r.error || '' });
+    })()`);
+    const o = JSON.parse(s);
+    assert(o.ok, `file:// 页面没能连上中继：${o.mixed ? '被判成混合内容' : o.err || '未知原因'}`);
+  });
+
   await check('插画已内联，可离线渲染', async () => {
     const s = await cdp.eval(`(() => {
       // 插画是内联的图形片段（不是 <symbol>），直接数卡片里的图形元素

@@ -530,15 +530,16 @@ function renderPrivacy() {
 
   pane.append(note(
     CRYPTO_MODE === 'aes-gcm'
-      ? `账户与密钥使用 <b>AES-GCM 256</b> 加密后写入本机存储，默认由设备密钥自动解锁，所以你不必每次重填。`
+      ? '密钥与账号备注使用 <b>AES-GCM 256</b> 加密后写入本机存储，默认由设备密钥自动解锁，所以你不必每次重填。'
       : '当前浏览器环境未提供加密能力（例如以 file:// 打开且浏览器限制了 WebCrypto），'
-        + '账户信息只做了<b>混淆存储</b>，并非真正加密。建议改用 http(s) 方式打开本页，或不要在设置里填写真实密码。',
+        + '这些内容只做了<b>混淆存储</b>，并非真正加密。建议改用 http(s) 方式打开本页，别在这里填敏感信息。',
     CRYPTO_MODE === 'aes-gcm' ? 'good' : 'warn',
     CRYPTO_MODE === 'aes-gcm' ? 'shield' : 'info'
   ));
 
-  pane.append(note('纯前端工具无法防御同机恶意脚本。真正的账号密码建议不填；'
-    + '如果必须保存，请开启口令保护。', 'warn', 'info'));
+  pane.append(note('实时比价用的是你浏览器里已有的登录态，所以这里<b>不需要、也不该填</b>平台密码；'
+    + '账号一栏只是给你自己看的备注。真正敏感的是大模型 API Key —— '
+    + '纯前端工具无法防御同机恶意脚本，建议为它单独开启口令保护。', 'warn', 'info'));
 
   /* 口令 */
   const passInput = passwordInput({ placeholder: '新口令（至少 6 位）' });
