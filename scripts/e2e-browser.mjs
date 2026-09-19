@@ -54,18 +54,35 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg || '断言失败'
 
 /** 起一个独立的无头浏览器打开页面，返回 { eval, close } */
 async function launchPage(url) {
+  // 这台机器上可能同时有别的自检在跑，端口撞了就换一个重试
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await launchPageOnce(url);
+    } catch (e) {
+      lastErr = e;
+      await sleep(500);
+    }
+  }
+  throw lastErr || new Error('无头浏览器没起来');
+}
+
+async function launchPageOnce(url) {
   const bin = BROWSERS.find((p) => existsSync(p));
-  const port = 22000 + Math.floor(Math.random() * 800);
+  const port = 22000 + Math.floor(Math.random() * 2000);
   const profile = mkdtempSync(join(tmpdir(), 'mp-e2ebr-'));
-  const child = spawn(bin, [...SANDBOX_ARGS, 
+  const child = spawn(bin, [...SANDBOX_ARGS,
     '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
     '--hide-scrollbars', '--window-size=430,932',
     `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, url,
   ], { stdio: 'ignore' });
+  // 起不来时别留孤儿进程
+  const bail = () => { try { child.kill(); } catch { /* ignore */ } };
 
   let target = null;
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + 25000;
   while (Date.now() < deadline) {
+    if (child.exitCode !== null) break;
     try {
       const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
       target = list.find((t) => t.type === 'page' && t.url.startsWith('http'));
@@ -73,7 +90,11 @@ async function launchPage(url) {
     } catch { /* 等 */ }
     await sleep(200);
   }
-  if (!target) throw new Error('无头浏览器没起来');
+  if (!target) {
+    bail();
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
+    throw new Error(`无头浏览器没起来（port=${port} exit=${child.exitCode}）`);
+  }
 
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => {
