@@ -292,8 +292,12 @@ try {
   spyRelay.kill();
   fake.close();
   await sleep(600);
-  try { spawn('taskkill', ['/PID', String(relay.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* ignore */ }
-  try { spawn('taskkill', ['/PID', String(spyRelay.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* ignore */ }
+  // Windows 上 node 的子进程树要单独收；其它平台 kill 就够了（taskkill 不存在）
+  if (process.platform === 'win32') {
+    for (const p of [relay, spyRelay]) {
+      try { spawn('taskkill', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* ignore */ }
+    }
+  }
   if (!hadProfile) {
     await sleep(800);
     try { rmSync(profileDir, { recursive: true, force: true }); } catch { /* ignore */ }
