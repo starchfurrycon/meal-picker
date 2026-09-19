@@ -323,6 +323,51 @@ try {
     assert(o.settingsEntry, '左下角缺少设置入口');
   });
 
+  await check('设计令牌与基础样式真的生效（曾经整页错位过）', async () => {
+    const s = await cdp.eval(`(() => {
+      const rootCS = getComputedStyle(document.documentElement);
+      const need = ['--s-5','--s-6','--surface','--line-strong','--c-orange','--font','--r-pill','--bg','--text','--sh-2','--ease-out'];
+      const missing = need.filter((k) => !rootCS.getPropertyValue(k).trim());
+      const bodyCS = getComputedStyle(document.body);
+      return JSON.stringify({
+        missing,
+        margin: bodyCS.margin,
+        overflow: bodyCS.overflow,
+        bg: bodyCS.backgroundColor,
+        font: bodyCS.fontFamily,
+        sheets: document.styleSheets.length,
+      });
+    })()`);
+    const o = JSON.parse(s);
+    assert(o.missing.length === 0, `设计令牌没生效：${o.missing.join(' ')}（多半是 tokens.css 没加载）`);
+    assert(/^0px/.test(o.margin), `body 还有默认边距：${o.margin}`);
+    assert(o.overflow === 'hidden', `body overflow 应为 hidden，实际 ${o.overflow}`);
+    assert(!/^rgba\(0, 0, 0, 0\)$/.test(o.bg), `body 背景没被样式接管：${o.bg}`);
+    assert(/PingFang|Microsoft YaHei|system-ui|Noto Sans/.test(o.font), `字体栈没生效：${o.font}`);
+  });
+
+  await check('首页「设置」在左下角，不压住标题（曾经压在标题上过）', async () => {
+    const s = await cdp.eval(`(() => {
+      const foot = document.querySelector('.home-foot').getBoundingClientRect();
+      const brand = document.querySelector('.brand').getBoundingClientRect();
+      const form = document.querySelector('#ask-form').getBoundingClientRect();
+      return JSON.stringify({
+        vh: innerHeight, vw: innerWidth,
+        foot: { y: Math.round(foot.y), bottom: Math.round(foot.bottom), h: Math.round(foot.height), x: Math.round(foot.x) },
+        brand: { y: Math.round(brand.y), bottom: Math.round(brand.bottom) },
+        form: { y: Math.round(form.y), bottom: Math.round(form.bottom), right: Math.round(form.right) },
+      });
+    })()`);
+    const o = JSON.parse(s);
+    // 底部页脚应贴着视口底部
+    assert(o.vh - o.foot.bottom <= 60, `设置入口没贴底：foot.bottom=${o.foot.bottom}，视口高 ${o.vh}`);
+    // 且不能和品牌区、输入框重叠
+    assert(o.foot.y >= o.form.bottom - 2, `设置入口和输入框重叠（foot.y=${o.foot.y} < form.bottom=${o.form.bottom}）`);
+    assert(o.foot.y >= o.brand.bottom - 2, `设置入口压在标题上（foot.y=${o.foot.y} < brand.bottom=${o.brand.bottom}）`);
+    // 不该横向溢出
+    assert(o.form.right <= o.vw + 1, `输入框横向溢出：right=${o.form.right} > 视口 ${o.vw}`);
+  });
+
   await check('图标 sprite 已解析（use 指向存在的 symbol）', async () => {
     const missing = await cdp.eval(`(() => {
       const ids = new Set(Array.from(document.querySelectorAll('symbol')).map(s => s.id));

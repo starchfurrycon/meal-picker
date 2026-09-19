@@ -294,6 +294,30 @@ try {
     assert(v, '目录版没启动');
   });
 
+  await check('目录版样式完整：设计令牌生效、设置入口贴底', async () => {
+    const s = await cdp.eval(`(() => {
+      const rootCS = getComputedStyle(document.documentElement);
+      const need = ['--s-5','--s-6','--surface','--line-strong','--c-orange','--font','--r-pill','--bg','--text'];
+      const missing = need.filter((k) => !rootCS.getPropertyValue(k).trim());
+      const bodyCS = getComputedStyle(document.body);
+      const foot = document.querySelector('.home-foot').getBoundingClientRect();
+      const form = document.querySelector('#ask-form').getBoundingClientRect();
+      return JSON.stringify({
+        missing, margin: bodyCS.margin, overflow: bodyCS.overflow,
+        vh: innerHeight, vw: innerWidth,
+        footY: Math.round(foot.y), footBottom: Math.round(foot.bottom),
+        formBottom: Math.round(form.bottom), formRight: Math.round(form.right),
+      });
+    })()`);
+    const o = JSON.parse(s);
+    assert(o.missing.length === 0, `目录版设计令牌没生效：${o.missing.join(' ')}`);
+    assert(/^0px/.test(o.margin), `目录版 body 还有默认边距：${o.margin}`);
+    assert(o.overflow === 'hidden', `目录版 body overflow 应为 hidden，实际 ${o.overflow}`);
+    assert(o.vh - o.footBottom <= 60, `目录版设置入口没贴底：bottom=${o.footBottom}，视口 ${o.vh}`);
+    assert(o.footY >= o.formBottom - 2, `目录版设置入口和输入框重叠（${o.footY} < ${o.formBottom}）`);
+    assert(o.formRight <= o.vw + 1, `目录版输入框横向溢出：${o.formRight} > ${o.vw}`);
+  });
+
   await check('目录版无运行时报错', () => {
     assert(errs.length === 0, errs.join('\n      '));
   });

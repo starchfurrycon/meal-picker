@@ -66,6 +66,8 @@ const esbuildArgs = [
   '--format=esm',
   '--target=es2020',
   '--minify',
+  // 不加这个的话 esbuild 会把中文转成 \uXXXX，体积更大、也没法直接看
+  '--charset=utf8',
   '--outfile=.build-tmp/bundle.js',
   '--log-level=warning',
 ];
@@ -97,15 +99,19 @@ const appCss = readFileSync(join(web, 'styles', 'app.css'), 'utf8');
 
 let single = indexHtml
   .replace(
-    '<link rel="stylesheet" href="styles/app.css" />',
-    `<style>\n${tokensCss}\n${appCss}\n</style>`
+    /[ \t]*<link rel="stylesheet" href="styles\/(tokens|app)\.css" \/>\r?\n?/g,
+    ''
+  )
+  .replace(
+    '</head>',
+    `<style>\n${tokensCss}\n${appCss}\n</style>\n</head>`
   )
   .replace(
     '<script type="module" src="js/app.js"></script>',
     `<script type="module">\n${bundle}\n</script>`
   );
 
-if (single.includes('styles/app.css') || single.includes('js/app.js')) {
+if (single.includes('styles/app.css') || single.includes('styles/tokens.css') || single.includes('js/app.js')) {
   throw new Error('内联失败：HTML 里仍残留外部引用');
 }
 single = single.replace(
@@ -143,7 +149,21 @@ const relaySrc = join(root, 'relay');
 const collectorSrc = join(root, 'collector');
 if (existsSync(relaySrc)) copyTree(relaySrc, join(dist, 'relay'));
 if (existsSync(collectorSrc)) copyTree(collectorSrc, join(dist, 'collector'));
-log('  目录版就绪');
+
+// 目录版的 CSS 也内联进 index.html。
+// 原来只外链 styles/app.css，而设计令牌在 styles/tokens.css 里 ——
+// 外链方式少一个文件就整套样式失效（body 边距、颜色、间距全没了），
+// 而且只影响"目录版"这一个产物，单文件版因为内联了两份 CSS 反而正常，
+// 所以这种崩法在自检里长期看不出来。内联后目录版不再依赖外链。
+const dirIndexPath = join(dist, 'web', 'index.html');
+const dirIndex = readFileSync(dirIndexPath, 'utf8');
+const inlined = dirIndex.replace(
+  /[ \t]*<link rel="stylesheet" href="styles\/(tokens|app)\.css" \/>\r?\n?/g,
+  ''
+).replace('</head>', `<style>\n${tokensCss}\n${appCss}\n</style>\n</head>`);
+if (/rel="stylesheet"/.test(inlined)) throw new Error('目录版内联失败：仍残留外部样式表引用');
+writeFileSync(dirIndexPath, inlined, 'utf8');
+log('  目录版就绪（CSS 已内联）');
 
 /* ══════════ 4. 发行包 zip ══════════ */
 log('▸ 生成发行包…');
