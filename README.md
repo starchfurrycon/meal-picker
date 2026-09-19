@@ -111,7 +111,7 @@ node scripts/probe-collector-live.mjs        # 端到端：注入 → 采集 →
 需要 Node 18+（自检需要 Node 22+）。**零依赖，不用 npm install。**
 
 从 [Releases](https://github.com/starchfurrycon/meal-picker/releases) 下载
-`meal-picker-2.1.0.zip` 解压，然后：
+`meal-picker-2.1.1.zip` 解压，然后：
 
 ```bash
 node relay/server.mjs
@@ -240,7 +240,7 @@ Windows 上双击 `relay/启动.cmd` 更省事。
 
 | 文件 | 说明 |
 |---|---|
-| `meal-picker-2.1.0.zip` | 推荐：单文件版 + 目录版 + `relay/` + `collector/` + 插画源文件 |
+| `meal-picker-2.1.1.zip` | 推荐：单文件版 + 目录版 + `relay/` + `collector/` + 插画源文件 |
 | `meal-picker-collector.user.js` | 采集器脚本（只在"用我自己的浏览器"模式下需要） |
 | `meal-picker.html` | 单文件版 |
 | `SHA256SUMS.txt` | 上面几个文件的校验和 |
