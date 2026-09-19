@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>安装采集器 · 选餐</title>
+<style>
+  :root {
+    --cream: #FFF7EF; --sand: #F0DFC8; --line: #E2CDB2; --ink: #4A3B2E;
+    --muted: #8C7663; --orange: #FF8A3D; --orange-deep: #F0701E; --matcha: #3E7A52;
+    --card: #FFFDFA;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 20px 72px;
+    font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    color: var(--ink); background: var(--cream);
+    background-image: radial-gradient(circle at 12% 8%, rgba(255,138,61,.10), transparent 42%),
+                      radial-gradient(circle at 88% 4%, rgba(111,176,127,.10), transparent 38%);
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: .01em; }
+  .sub { color: var(--muted); margin: 0 0 30px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 22px 24px; margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(74,59,46,.05);
+  }
+  .card h2 { font-size: 16px; margin: 0 0 12px; display: flex; align-items: center; gap: 9px; }
+  .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--orange); color: #fff; font-size: 12px; font-weight: 700; flex: none;
+  }
+  ol, ul { margin: 0; padding-left: 20px; }
+  li { margin: 5px 0; }
+  code {
+    background: #F6EDE2; border: 1px solid var(--line); border-radius: 6px;
+    padding: 1px 6px; font-size: 13px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--orange); color: #fff; text-decoration: none;
+    padding: 11px 20px; border-radius: 11px; font-weight: 600; font-size: 15px;
+    border: none; cursor: pointer; margin: 6px 0;
+  }
+  .btn:hover { background: var(--orange-deep); }
+  .btn--ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .btn--ghost:hover { background: #FBF3EA; }
+  .status {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; border-radius: 11px; font-size: 14px;
+    background: #F6EDE2; border: 1px solid var(--line); margin-bottom: 14px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #C9B49B; flex: none; }
+  .dot.ok { background: var(--matcha); box-shadow: 0 0 0 3px rgba(62,122,82,.15); }
+  .dot.off { background: #D9534F; box-shadow: 0 0 0 3px rgba(217,83,79,.14); }
+  .tip { color: var(--muted); font-size: 13.5px; margin-top: 10px; }
+  .warn { background: #FFF4E6; border-color: #F3D9B8; }
+  .warn h2 { color: #A9631C; }
+  a { color: var(--orange-deep); }
+  .kbd {
+    display: inline-block; padding: 0 6px; border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 5px; background: #fff; font-size: 12.5px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>装一次，之后就不用管了</h1>
+  <p class="sub">采集器跑在你自己的浏览器里，用你自己的登录态读各平台真实价格。它不会代替你登录，也不会绕过任何风控。</p>
+
+  <div class="status" id="status">
+    <span class="dot" id="dot"></span>
+    <span id="status-text">正在检测本地中继…</span>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">1</span>装一个用户脚本管理器</h2>
+    <p style="margin:0 0 8px">推荐 <b>Tampermonkey</b>（油猴），四大浏览器都有。已经装过就跳过。</p>
+    <a class="btn btn--ghost" href="https://www.tampermonkey.net/" target="_blank" rel="noopener">前往 Tampermonkey 官网</a>
+    <p class="tip">装完浏览器工具栏上会出现一个黑色小图标。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">2</span>安装选餐采集器</h2>
+    <p style="margin:0 0 10px">点下面的按钮，油猴会弹出安装页面，确认即可。</p>
+    <a class="btn" id="install-link" href="/collector.user.js">安装采集器脚本</a>
+    <p class="tip">如果点击后是纯文本页面，把地址复制到油猴的「添加新脚本」里，或直接在该页面上点油猴图标的「安装」。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">3</span>在各平台登录一次</h2>
+    <ul>
+      <li>在浏览器里打开 <b>美团外卖</b>、<b>淘宝闪购</b>、<b>京东</b>，用你自己的账号登录</li>
+      <li>登录状态浏览器会自己记住，之后不用反复登</li>
+      <li>没登录也能采到一部分，但价格、会员价和券会不准</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">4</span>回到选餐开始比价</h2>
+    <p style="margin:0 0 10px">之后每次比价，工具会自动打开各平台的搜索页，采集器在那些页面上读价格并回传。</p>
+    <a class="btn btn--ghost" href="/">打开选餐</a>
+    <p class="tip">采集完那些标签页会自动关掉。如果浏览器拦了弹出窗口，允许一次就行。</p>
+  </div>
+
+  <div class="card warn">
+    <h2>它到底做了什么</h2>
+    <ul>
+      <li>监听<b>页面自己发出</b>的搜索请求，读取它返回的 JSON（拦截的是页面与平台之间的通信，不额外发请求）</li>
+      <li>认不出接口时，退一步读取页面上<b>已经渲染出来</b>的价格文字</li>
+      <li>把读到的价格 POST 到本机中继 <code id="relay-url">http://127.0.0.1:8765</code>，只存内存，每轮比价开始时清空</li>
+      <li>不上传任何数据到互联网，不碰你的账号密码，不改动页面上的任何内容</li>
+    </ul>
+    <p class="tip">各平台页面结构随时会变。认不出数据时采集器不会瞎猜，只会如实报告"没读到"。</p>
+  </div>
+</div>
+
+<script>
+  (async () => {
+    const dot = document.getElementById('dot');
+    const text = document.getElementById('status-text');
+    const port = location.port || '8765';
+    document.getElementById('relay-url').textContent = `http://127.0.0.1:${port}`;
+    try {
+      const r = await fetch('/api/health', { cache: 'no-store' });
+      const j = await r.json();
+      dot.className = 'dot ok';
+      if (j.collectorSeen == null) {
+        text.textContent = '中继已连接。采集器还没出现过 —— 装完脚本后打开一次美团或淘宝，这里就会变成"活跃"。';
+      } else {
+        const s = Math.max(1, Math.round(j.collectorSeen / 1000));
+        text.textContent = `中继已连接，采集器 ${s} 秒前还活跃着 —— 一切就绪。`;
+      }
+    } catch {
+      dot.className = 'dot off';
+      text.textContent = '中继没响应。请先启动它：node relay/server.mjs';
+    }
+  })();
+</script>
+</body>
+</html>

@@ -38,6 +38,7 @@ jobs:
           mkdir -p _site
           cp -r dist/web/* _site/
           cp dist/meal-picker.html _site/meal-picker.html
+          cp dist/meal-picker-collector.user.js _site/meal-picker-collector.user.js
           mkdir -p _site/assets
           cp -r dist/assets/* _site/assets/
           touch _site/.nojekyll

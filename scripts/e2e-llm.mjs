@@ -5,6 +5,7 @@
  *
  * 用一个本机假接口冒充 OpenAI 兼容服务，验证：
  *   真实网络请求发出 → 关键词以模型返回为准 → token 与花费被记录并显示 → 请求体省 token
+ * 同时起一个真的本地中继并灌入假采集器数据，让实时采集那一段也能跑通。
  * 不需要任何真实 API Key，不产生任何费用。
  */
 
@@ -13,11 +14,65 @@ import { createServer } from 'node:http';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const pageUrl = pathToFileURL(join(root, 'web', 'index.html')).href;
+
+/* ── 本地中继 ── */
+const RELAY_PORT = 18100 + Math.floor(Math.random() * 300);
+const relayProc = spawn(process.execPath, [
+  join(root, 'relay', 'server.mjs'), '--port', String(RELAY_PORT), '--quiet', '--no-open',
+], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function waitRelay(timeoutMs = 9000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    try { const r = await fetch(`http://127.0.0.1:${RELAY_PORT}/api/health`); if (r.ok) return true; } catch { /* 等 */ }
+    await sleepMs(150);
+  }
+  return false;
+}
+const relayUp = await waitRelay();
+const pageUrl = relayUp
+  ? `http://127.0.0.1:${RELAY_PORT}/`
+  : new URL(`file://${join(root, 'web', 'index.html').replace(/\\/g, '/')}`).href;
+if (!relayUp) console.log('提示：中继没起来，LLM 分支只验证转写部分');
+
+/** 假采集器数据 */
+const FIXTURE = {
+  merchant: '蜀香源川菜馆', rating: 4.7, reviewCount: 2381,
+  good: [{ text: '分量是真的足，一个人吃撑了', tag: '份量足' }, { text: '出餐快，到手还是烫的', tag: '出餐快' }],
+  bad: [{ text: '微微有点咸，但整体很香', tag: '偏咸' }],
+  packages: [{
+    id: 'mt-1', name: '水煮鱼片套餐', dish: '水煮鱼片套餐', art: 'hotpot',
+    basePrice: 48, shippingFee: 4, packingFee: 1,
+    deals: [{ kind: 'coupon', label: '满 40 减 12', amount: 12, threshold: 40 }],
+    finalPrice: 41, etaMin: 32, rating: 4.7, reviewCount: 2381, monthlySales: 890,
+  }],
+};
+let feeder = null;
+function startFeeder(platforms) {
+  const push = async () => {
+    try {
+      const snap = await (await fetch(`http://127.0.0.1:${RELAY_PORT}/api/prices`)).json();
+      const done = new Set(Object.keys(snap.prices || {}));
+      for (const id of platforms) {
+        if (done.has(id)) continue;
+        await fetch(`http://127.0.0.1:${RELAY_PORT}/api/prices`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform: id, keyword: 'test', offers: [FIXTURE] }),
+        });
+      }
+    } catch { /* ignore */ }
+  };
+  push();
+  feeder = setInterval(push, 600);
+}
+function stopFeeder() { if (feeder) { clearInterval(feeder); feeder = null; } }
 
 const BROWSERS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -40,6 +95,28 @@ const MODEL_REPLY = {
   p: 2,
   a: ['香菜'],
 };
+
+/** 跑一次完整流程，并在期间持续灌入假采集器数据 */
+async function submitAndWait(cdp, query, { maxWaitMs = 45000 } = {}) {
+  if (relayUp) startFeeder(['meituan', 'eleme', 'jd', 'taobao']);
+  try {
+    await cdp.eval(`(() => {
+      const i = document.querySelector('#ask-input');
+      i.value = ${JSON.stringify(query)};
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('#ask-form').requestSubmit();
+      return true;
+    })()`);
+    const end = Date.now() + maxWaitMs;
+    while (Date.now() < end) {
+      if (await cdp.eval('document.body.dataset.view') === 'result') break;
+      await sleep(200);
+    }
+    await sleep(400);
+  } finally {
+    stopFeeder();
+  }
+}
 
 let lastRequestBody = null;
 let requestCount = 0;
@@ -169,6 +246,11 @@ try {
     if (await cdp.eval('!!globalThis.__mealPicker')) break;
     await sleep(120);
   }
+  // 无头浏览器会拦截 window.open；这里换成桩，让"打开平台页"那一步能走通
+  await cdp.eval(`(() => {
+    window.open = () => ({ close() {}, closed: false, focus() {} });
+    return true;
+  })()`);
   await sleep(400);
 
   console.log(`\n假 LLM 服务：${baseUrl}`);
@@ -180,7 +262,7 @@ try {
       s.saveSettings({
         platforms: { meituan: { enabled: true }, eleme: { enabled: true }, jd: { enabled: true }, taobao: { enabled: true } },
         llm: { enabled: true, baseUrl: ${JSON.stringify(baseUrl)}, model: 'mock-model', priceIn: 2, priceOut: 8, showCost: true },
-        dataSource: { mode: 'auto', demo: true }
+        dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000 }
       });
       await s.setApiKey('sk-mock-key-for-test');
       return true;
@@ -190,17 +272,7 @@ try {
   });
 
   await check('走完流程，关键词来自模型返回', async () => {
-    await cdp.eval(`(() => {
-      const i = document.querySelector('#ask-input');
-      i.value = '想和朋友吃点够味的鱼，两个人，别超过五十';
-      i.dispatchEvent(new Event('input', { bubbles: true }));
-      document.querySelector('#ask-form').requestSubmit();
-      return true;
-    })()`);
-    for (let i = 0; i < 80; i++) {
-      if (await cdp.eval('document.body.dataset.view') === 'result') break;
-      await sleep(200);
-    }
+    await submitAndWait(cdp, '想和朋友吃点够味的鱼，两个人，别超过五十');
     const v = await cdp.eval('document.body.dataset.view');
     assert(v === 'result', `没走到结果页，停在 ${v}`);
     assert(requestCount >= 1, '假接口没有收到请求');
@@ -250,18 +322,7 @@ try {
   await check('同样的话第二次命中缓存，不再产生费用', async () => {
     const before = JSON.parse(await cdp.eval('JSON.stringify(__mealPicker.store.todayUsage())'));
     const reqBefore = requestCount;
-    await cdp.eval(`(() => {
-      const i = document.querySelector('#ask-input');
-      i.value = '想和朋友吃点够味的鱼，两个人，别超过五十';
-      i.dispatchEvent(new Event('input', { bubbles: true }));
-      document.querySelector('#ask-form').requestSubmit();
-      return true;
-    })()`);
-    for (let i = 0; i < 80; i++) {
-      if (await cdp.eval('document.body.dataset.view') === 'result') break;
-      await sleep(200);
-    }
-    await sleep(300);
+    await submitAndWait(cdp, '想和朋友吃点够味的鱼，两个人，别超过五十');
     assert(requestCount === reqBefore, '重复提问不应再次请求接口');
     const after = JSON.parse(await cdp.eval('JSON.stringify(__mealPicker.store.todayUsage())'));
     assert(after.calls === before.calls, `缓存命中时不应增加调用次数：${before.calls} → ${after.calls}`);
@@ -271,6 +332,7 @@ try {
 
   await check('接口报错时回退到内置转写，流程不中断', async () => {
     await cdp.eval(`__mealPicker.store.saveSettings({ llm: { baseUrl: 'http://127.0.0.1:1/v1' } })`);
+    if (relayUp) startFeeder(['meituan', 'eleme', 'jd', 'taobao']);
     await cdp.eval(`(() => {
       const i = document.querySelector('#ask-input');
       i.value = '来一碗热汤面';
@@ -278,17 +340,21 @@ try {
       document.querySelector('#ask-form').requestSubmit();
       return true;
     })()`);
-    await sleep(1500);
+    await sleep(1800);
     const meta = await cdp.eval('document.querySelector("#think-meta").textContent');
     assert(/内置转写/.test(meta), `应回退到内置转写，实际「${meta}」`);
-    for (let i = 0; i < 80; i++) {
+    const end = Date.now() + 40000;
+    while (Date.now() < end) {
       if (await cdp.eval('document.body.dataset.view') === 'result') break;
       await sleep(200);
     }
+    stopFeeder();
     const v = await cdp.eval('document.body.dataset.view');
     assert(v === 'result', `回退后仍应出结果，实际 ${v}`);
     const card = await cdp.eval('!!document.querySelector(".card")');
     assert(card, '回退后没有卡片');
+    // 收尾：把 baseUrl 恢复，避免影响后续人工排查
+    await cdp.eval(`__mealPicker.store.saveSettings({ llm: { baseUrl: ${JSON.stringify(baseUrl)} } })`);
   });
 
   await check('全程没有未捕获异常', () => {
@@ -303,9 +369,11 @@ try {
   console.error('自检执行失败：', err);
   process.exitCode = 1;
 } finally {
+  stopFeeder();
   try { cdp?.close(); } catch { /* ignore */ }
   chrome.kill();
   server.close();
+  try { relayProc?.kill(); } catch { /* ignore */ }
   await sleep(400);
   try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
 }

@@ -5,6 +5,7 @@
 
 import { PLATFORMS, TASTES, FACTORS, DEFAULT_WEIGHTS } from './catalog.js';
 import { SOURCES } from './adapters.js';
+import { probeRelay, DEFAULT_RELAY_PORT } from './realtime.js';
 import { $, el, icon, money, clamp } from './util.js';
 import {
   openSheet, closeSheet, toast, switchEl, field, textInput, passwordInput,
@@ -98,7 +99,8 @@ function renderPlatforms() {
   const pane = el('div', { class: 'pane is-on' });
   const s = store.settings;
 
-  pane.append(note('勾选你常用的平台并填入账户。账户信息在本机加密保存，下次打开无需重填。'));
+  pane.append(note('勾选你常用的平台。实时采集用的是你自己浏览器里的登录态，'
+    + '所以这里<b>不需要填密码</b>；账号只是给你自己看的备注。'));
 
   for (const p of PLATFORMS) {
     const conf = s.platforms[p.id];
@@ -177,10 +179,11 @@ function renderPlatforms() {
   const cfg = store.settings.dataSource;
   const modeSel = el('select', { class: 'select' });
   for (const src of SOURCES) {
-    modeSel.append(el('option', { value: src.id, selected: (cfg.mode === 'auto' && src.id === 'custom') || cfg.mode === src.id, text: src.label }));
+    modeSel.append(el('option', { value: src.id, selected: cfg.mode === src.id, text: src.label }));
   }
-  modeSel.append(el('option', { value: 'auto', selected: cfg.mode === 'auto', text: '自动（有接口用接口，否则用演示数据）' }));
-  modeSel.value = cfg.mode === 'auto' ? 'auto' : cfg.mode;
+  modeSel.append(el('option', { value: 'auto', selected: cfg.mode === 'auto', text: '自动（配了接口用接口，否则实时采集）' }));
+  modeSel.append(el('option', { value: 'none', selected: cfg.mode === 'none', text: '不使用任何数据源' }));
+  modeSel.value = cfg.mode;
   modeSel.addEventListener('change', () => {
     store.saveSettings({ dataSource: { mode: modeSel.value } });
     renderSheet();
@@ -192,38 +195,94 @@ function renderPlatforms() {
     onInput: (v) => store.saveSettings({ dataSource: { endpoint: v } }),
   });
 
-  pane.append(el('h3', { class: 'section-title', text: '数据来源' }));
+  const portInput = textInput({
+    value: String(cfg.relayPort || DEFAULT_RELAY_PORT),
+    placeholder: '8765',
+    onInput: (v) => {
+      const n = Number(String(v).replace(/\D/g, ''));
+      if (n >= 1024 && n <= 65535) store.saveSettings({ dataSource: { relayPort: n } });
+    },
+  });
+
+  const tabsSel = el('select', { class: 'select' });
+  tabsSel.append(el('option', { value: 'visible', selected: cfg.openTabs !== 'background', text: '打开可见标签页（推荐，能顺便确认登录状态）' }));
+  tabsSel.append(el('option', { value: 'background', selected: cfg.openTabs === 'background', text: '尽量在后台打开（不打扰，但可能被浏览器节流）' }));
+  tabsSel.addEventListener('change', () => store.saveSettings({ dataSource: { openTabs: tabsSel.value } }));
+
+  // 采集器状态：实时探测中继
+  const statusRow = el('div', { class: 'relay-status' }, [
+    el('span', { class: 'relay-status__dot is-checking' }),
+    el('span', { class: 'relay-status__text', text: '正在检测本地中继…' }),
+  ]);
+  const actions = el('div', { class: 'relay-actions' });
+  probeRelay(store.settings).then((r) => {
+    statusRow.replaceChildren();
+    if (r.ok) {
+      statusRow.append(
+        el('span', { class: 'relay-status__dot is-ok' }),
+        el('span', { class: 'relay-status__text' }, [
+          el('b', { text: '中继已连接' }),
+          el('span', { text: `　${r.base}` }),
+        ]),
+      );
+      const seen = r.collectorSeen;
+      statusRow.append(el('span', {
+        class: 'relay-status__text',
+        text: seen == null
+          ? '　采集器还没出现过——请确认已安装脚本，并打开过一次平台页面'
+          : `　采集器最近活跃：${Math.max(1, Math.round(seen / 1000))} 秒前`,
+      }));
+      actions.append(el('a', {
+        class: 'btn btn--block', href: `${r.base}/install`, target: '_blank', rel: 'noopener',
+      }, [icon('download'), '打开采集器安装页']));
+    } else {
+      statusRow.append(
+        el('span', { class: 'relay-status__dot is-off' }),
+        el('span', { class: 'relay-status__text' }, [
+          el('b', { text: '中继没在运行' }),
+          el('span', { text: `　${r.error}${r.mixedContent ? '（当前页面是 https，浏览器会拦截本地中继，请改用中继托管的页面）' : ''}` }),
+        ]),
+      );
+      actions.append(el('div', { class: 'field__hint' }, [
+        el('span', { text: '在项目目录里执行：' }),
+        el('code', { text: 'node relay/server.mjs' }),
+        el('span', { text: '　（Windows 上双击 relay 目录里的启动脚本也行）' }),
+      ]));
+    }
+  });
+
+  pane.append(el('h3', { class: 'section-title', text: '价格数据从哪来' }));
   pane.append(collapsible({
-    open: false,
+    open: cfg.mode !== 'realtime',
     head: [
       el('span', { class: 'group__logo', style: { '--p-color': '#5AA9E6', '--p-tint': 'rgba(90,169,230,.12)' } }, [icon('plug')]),
       el('span', { class: 'group__meta' }, [
-        el('span', { class: 'group__name', text: '价格数据从哪来' }),
-        el('span', { class: 'group__desc', text: cfg.endpoint ? '已配置自备接口' : '当前使用内置演示数据源' }),
+        el('span', { class: 'group__name', text: '数据来源' }),
+        el('span', {
+          class: 'group__desc',
+          text: cfg.mode === 'custom' ? '自备数据接口'
+            : cfg.mode === 'none' ? '已关闭'
+              : cfg.endpoint ? '自动：优先用自备接口' : '实时采集',
+        }),
       ]),
     ],
     body: [
-      note('浏览器不能直接抓取各平台的实时价格（跨域限制 + 平台不允许第三方直连）。'
-        + '所以：<b>要么接入你有权访问的接口</b>（自建后端 / 官方开放平台），'
-        + '<b>要么先用内置演示数据源</b>把整个筛选流程跑通。', 'warn', 'info'),
+      note('价格只有两个来源：<b>实时采集</b>（在你自己的浏览器里读各平台真实返回的价格）'
+        + '或<b>你自备的数据接口</b>。工具里不存在任何模拟或占位价格。', 'info', 'info'),
       field({ label: '数据模式', iconName: 'plug', control: modeSel }),
+
+      el('div', { class: 'field__label', text: '实时采集' }),
+      statusRow,
+      actions,
+      field({ label: '中继端口', iconName: 'sliders', control: portInput, hint: '改了端口要同步改中继启动参数：node relay/server.mjs --port 端口' }),
+      field({ label: '采集时如何打开平台页面', iconName: 'external', control: tabsSel }),
+
+      el('div', { class: 'field__label', text: '自备接口（可选）' }),
       field({
-        label: '自备接口地址',
+        label: '接口地址',
         iconName: 'external',
         control: endpointInput,
         hint: '前端会向该地址 POST 一个 JSON（含 keywords / platform / budget 等），期望返回候选数组。字段约定见 README。',
-      }),
-      checkRow({
-        checked: cfg.demo,
-        title: '没有接口时使用内置演示数据源',
-        desc: '生成结构完整的占位数据，价格与店名均为虚构',
-        onChange: (on) => store.saveSettings({ dataSource: { demo: on } }),
-      }),
-      checkRow({
-        checked: cfg.allowRemoteImages,
-        title: '允许加载远程图片',
-        desc: '关闭时只用内置插画，不产生任何外部请求',
-        onChange: (on) => store.saveSettings({ dataSource: { allowRemoteImages: on } }),
       }),
     ],
   }));

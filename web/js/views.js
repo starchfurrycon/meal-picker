@@ -32,9 +32,8 @@ export function renderHome(store) {
 
 const STEPS = [
   { key: 'parse', title: '理解你的口味', detail: '把这句话变成能直接搜索的关键词' },
-  { key: 'accounts', title: '核对已登记的平台', detail: '检查各平台账户与会员状态' },
-  { key: 'search', title: '在各平台搜索', detail: '按关键词检索可下单的套餐' },
-  { key: 'collect', title: '采集价格与优惠', detail: '原价、折扣、满减、配送与打包费' },
+  { key: 'open', title: '打开各平台', detail: '用你自己的浏览器与登录态' },
+  { key: 'collect', title: '读取实时价格', detail: '各平台页面真实返回的报价与优惠' },
   { key: 'reviews', title: '翻阅商家口碑', detail: '评分、评价量、真实度与差评点' },
   { key: 'score', title: '按你的偏好加权', detail: '价格 · 折扣 · 口碑 · 时效逐项打分' },
   { key: 'pick', title: '挑出最划算的一份', detail: '生成推荐理由与卡片' },
@@ -264,11 +263,18 @@ const formatPrice = (n) => {
 
 function sourceLabel(notes) {
   if (!notes?.length) return '';
-  const used = Array.from(new Set(notes.filter((n) => !n.error).map((n) => n.source)));
-  const failed = notes.filter((n) => n.error);
+  const ok = notes.filter((n) => !n.error && n.count > 0);
+  const failed = notes.filter((n) => n.error || n.count === 0);
   const parts = [];
-  if (used.includes('demo')) parts.push('价格数据来自内置演示数据源（店名与价格均为虚构）');
-  if (used.includes('custom')) parts.push('价格数据来自你配置的接口');
+  if (ok.length) {
+    const used = Array.from(new Set(ok.map((n) => n.source)));
+    const how = used.includes('realtime') && used.includes('custom')
+      ? '实时采集 + 你配置的接口'
+      : used.includes('custom') ? '你配置的接口' : '实时采集';
+    const newest = Math.max(...ok.map((n) => n.at || 0));
+    const age = newest ? Math.max(1, Math.round((Date.now() - newest) / 1000)) : 0;
+    parts.push(`价格来自${how}，采集于 ${age} 秒前，以各平台结算页为准`);
+  }
   if (failed.length) {
     const names = failed.map((f) => platformById(f.platform)?.name || f.platform).join('、');
     parts.push(`${names} 未取到数据`);
@@ -278,17 +284,21 @@ function sourceLabel(notes) {
 
 /* ══════════════ 空态 / 错误态 ══════════════ */
 
-export function renderEmpty({ iconName = 'info', title, text, actions = [] }) {
+export function renderEmpty({ iconName = 'info', title, text, actions = [], details = [] }) {
   const scroll = $('#result-scroll');
   const foot = $('#result-foot');
   foot.hidden = true;
   scroll.replaceChildren();
-  scroll.append(el('div', { class: 'empty' }, [
+  const box = el('div', { class: 'empty' }, [
     el('div', { class: 'empty__art' }, [icon(iconName)]),
     el('h2', { text: title }),
     el('p', { text }),
     ...actions,
-  ]));
+  ]);
+  if (details.length) {
+    box.append(el('ul', { class: 'empty__list' }, details.map((d) => el('li', { text: d }))));
+  }
+  scroll.append(box);
   return scroll.firstElementChild;
 }
 

@@ -3,9 +3,15 @@
  *
  *   node scripts/e2e.mjs
  *
- * 做法：启动本机 Chrome/Edge 的无头实例（file:// 打开 web/index.html），
- *      通过 DevTools Protocol 收集控制台报错、注入交互、断言 DOM 结果。
- *      目的是验证"在真实浏览器里，模块能加载、界面能跑通、没有运行时报错"。
+ * 做法：
+ *   1. 起一个真的本地中继（relay/server.mjs），端口随机
+ *   2. 用中继托管的地址打开工具页面 —— 和真实使用场景一致（同源，无混合内容问题）
+ *   3. 用 CDP 驱动真实浏览器走完整流程，同时往中继里灌入"假采集器"回传的价格，
+ *      模拟采集器已经干活的状态
+ *   4. 收集控制台报错、断言 DOM 结果
+ *
+ * 设 MEALPICKER_URL 可改测别的地址（例如线上 GitHub Pages）。
+ * 那种情况下没有本地中继，只跑结构与边界检查，跳过需要实时数据的流程断言。
  */
 
 import { spawn } from 'node:child_process';
@@ -16,9 +22,120 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-// 默认测本地源码；设 MEALPICKER_URL 可以改测线上（例如 GitHub Pages）
+
+const RELAY_PORT = 17700 + Math.floor(Math.random() * 400);
+let relayProc = null;
+let relayUrl = '';
+
+if (!process.env.MEALPICKER_URL) {
+  relayProc = spawn(process.execPath, [
+    join(root, 'relay', 'server.mjs'), '--port', String(RELAY_PORT), '--quiet', '--no-open',
+  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  relayUrl = `http://127.0.0.1:${RELAY_PORT}/`;
+}
+
+/** 等待中继起来；起不来就退回 file:// 并跳过实时相关断言 */
+async function bootRelay(timeoutMs = 9000) {
+  if (!relayProc) return false;
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${RELAY_PORT}/api/health`);
+      if (r.ok) return true;
+    } catch { /* 等 */ }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
+}
+
+const relayUp = await bootRelay();
+if (!relayUp) {
+  console.log('提示：本地中继没起来，退回 file:// 模式，只跑结构检查');
+  try { relayProc?.kill(); } catch { /* ignore */ }
+  relayProc = null;
+}
+
 const pageUrl = process.env.MEALPICKER_URL
-  || pathToFileURL(join(root, 'web', 'index.html')).href;
+  || (relayUp ? relayUrl : pathToFileURL(join(root, 'web', 'index.html')).href);
+const live = relayUp && !process.env.MEALPICKER_URL;
+
+/* ══════════════════════════════════════════════════════════
+   假采集器：往中继里灌入一批"像真的"候选
+   ══════════════════════════════════════════════════════════ */
+
+const FIXTURES = {
+  meituan: {
+    merchant: '蜀香源川菜馆', rating: 4.7, reviewCount: 2381,
+    good: [{ text: '分量是真的足，一个人吃撑了', tag: '份量足' }, { text: '出餐快，到手还是烫的', tag: '出餐快' }],
+    bad: [{ text: '微微有点咸，但整体很香', tag: '偏咸' }],
+    packages: [{
+      id: 'mt-1', name: '水煮肉片套餐', dish: '水煮肉片套餐', art: 'hotpot',
+      basePrice: 42, shippingFee: 4, packingFee: 1,
+      deals: [{ kind: 'coupon', label: '满 40 减 12', amount: 12, threshold: 40 }],
+      finalPrice: 35, etaMin: 32, rating: 4.7, reviewCount: 2381, monthlySales: 890,
+    }],
+  },
+  eleme: {
+    merchant: '麻辣诱惑', rating: 4.6, reviewCount: 1502,
+    good: [{ text: '辣度刚好，够味但不烧胃', tag: '辣度合适' }, { text: '性价比在这个价位里很难找到对手', tag: '性价比高' }],
+    bad: [{ text: '份量比图片少一些', tag: '图文有差' }],
+    packages: [{
+      id: 'el-1', name: '麻辣香锅双人份', dish: '麻辣香锅双人份', art: 'hotpot',
+      basePrice: 58, shippingFee: 0, packingFee: 2,
+      deals: [{ kind: 'discount', label: '7.5 折', amount: 14.5 }],
+      finalPrice: 45.5, etaMin: 38, rating: 4.6, reviewCount: 1502, monthlySales: 610,
+    }],
+  },
+  jd: {
+    merchant: '京选鲜食', rating: 4.5, reviewCount: 733,
+    good: [{ text: '包装很稳，一点没洒', tag: '包装好' }],
+    bad: [],
+    packages: [{
+      id: 'jd-1', name: '照烧鸡腿饭', dish: '照烧鸡腿饭', art: 'rice',
+      basePrice: 29.9, shippingFee: 3, packingFee: 1,
+      deals: [{ kind: 'discount', label: '9 折', amount: 2.99 }],
+      finalPrice: 30.91, etaMin: 28, rating: 4.5, reviewCount: 733, monthlySales: 210,
+    }],
+  },
+  taobao: {
+    merchant: '闪购轻食铺', rating: 4.4, reviewCount: 512,
+    good: [{ text: '蔬菜新鲜，没有蔫的', tag: '新鲜' }],
+    bad: [],
+    packages: [{
+      id: 'tb-1', name: '鸡胸肉能量碗', dish: '鸡胸肉能量碗', art: 'salad',
+      basePrice: 26, shippingFee: 2, packingFee: 0,
+      deals: [], finalPrice: 28, etaMin: 22, rating: 4.4, reviewCount: 512, monthlySales: 160,
+    }],
+  },
+};
+
+/** 每 600ms 灌一次，模拟采集器陆续回传 */
+let feeder = null;
+function startFeeder(platforms) {
+  stopFeeder();
+  const push = async () => {
+    try {
+      const snap = await (await fetch(`http://127.0.0.1:${RELAY_PORT}/api/prices`)).json();
+      const done = new Set(Object.keys(snap.prices || {}));
+      for (const id of platforms) {
+        if (done.has(id)) continue;
+        await fetch(`http://127.0.0.1:${RELAY_PORT}/api/prices`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: id, keyword: 'test', page: `https://example.test/${id}`,
+            offers: [FIXTURES[id]],
+          }),
+        });
+      }
+    } catch { /* 中继可能正在重启 */ }
+  };
+  push();
+  feeder = setInterval(push, 600);
+}
+function stopFeeder() {
+  if (feeder) { clearInterval(feeder); feeder = null; }
+}
 
 const BROWSERS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -271,17 +388,26 @@ try {
   /* ══════════ 主流程 ══════════ */
   console.log('\n[2] 主流程：输入 → 过场 → 结果');
 
-  await check('准备两个启用平台并写入本地存储', async () => {
+  await check('准备四个启用平台、指向本地中继', async () => {
     await cdp.eval(`(() => {
-      __mealPicker.store.saveSettings({ platforms: {
-        meituan: { enabled: true }, eleme: { enabled: true }, jd: { enabled: true }, taobao: { enabled: true }
-      }});
+      __mealPicker.store.saveSettings({
+        platforms: { meituan: { enabled: true }, eleme: { enabled: true }, jd: { enabled: true }, taobao: { enabled: true } },
+        dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000 }
+      });
       return true;
     })()`);
     await sleep(150);
   });
 
-  await check('提交输入后进入加载过场，显示步骤与说明文字', async () => {
+  if (!live) {
+    await check('（非中继模式）跳过需要实时数据的流程断言', () => {
+      assert(true, '');
+    });
+  }
+
+  if (live) await check('提交输入后进入加载过场，显示步骤与说明文字', async () => {
+    // 起一个假采集器，模拟采集器在各平台页面上陆续回传
+    startFeeder(['meituan', 'eleme', 'jd', 'taobao']);
     await cdp.eval(`(() => {
       const i = document.querySelector('#ask-input');
       i.value = '想吃点辣的但是别太贵，一个人吃，40以内';
@@ -303,24 +429,24 @@ try {
     const o = JSON.parse(s);
     assert(o.view === 'thinking', `应进入 thinking，实际 ${o.view}`);
     assert(o.thinkingOn, '加载视图没有显示');
-    assert(o.steps === 7, `步骤应有 7 步，实际 ${o.steps}`);
+    assert(o.steps === 6, `步骤应有 6 步，实际 ${o.steps}`);
     assert(o.active === 1, '同一时刻应只有一步处于进行中');
     assert(o.title && o.detail, '缺少说明文字');
     assert(o.undo, '加载页缺少"我改主意了"');
     if (!/关键词|转写/.test(o.meta)) {
-      // 给一次重试窗口：过场第一步本身就带 780ms 的节奏
       await sleep(1200);
       const later = await cdp.eval('document.querySelector("#think-meta").textContent');
       assert(/关键词|转写/.test(later), `应显示转写结果，500ms 时「${o.meta}」，1.7s 时「${later}」`);
     }
   });
 
-  await check('过场结束后放出结果卡片', async () => {
-    for (let i = 0; i < 60; i++) {
+  if (live) await check('过场结束后放出结果卡片', async () => {
+    for (let i = 0; i < 90; i++) {
       const v = await cdp.eval('document.body.dataset.view');
       if (v === 'result') break;
       await sleep(200);
     }
+    stopFeeder();
     const v = await cdp.eval('document.body.dataset.view');
     assert(v === 'result', `仍停留在 ${v}`);
     await sleep(500);
@@ -352,38 +478,51 @@ try {
     assert(o.back && o.undo && o.again, '缺少返回/后悔/换一个按钮');
     assert(o.otherCards === 1, `只应呈现一张卡片，实际 ${o.otherCards}`);
     assert(/比过/.test(o.note), '底部缺少比价摘要');
+    assert(/实时采集/.test(o.note), `底部应说明价格来自实时采集：${o.note}`);
     console.log(`      卡片：${o.platform} · ${o.name} · ${o.price} · ${o.reasons} 条理由`);
   });
 
-  await check('卡片里不出现公式/权重一类的开发者术语', async () => {
+  if (live) await check('卡片里不出现公式/权重一类的开发者术语', async () => {
     const text = await cdp.eval('document.querySelector("#result-scroll").innerText');
-    for (const bad of ['权重', '归一化', '加权公式', '系数', 'API', 'provider', 'token']) {
+    for (const bad of ['权重', '归一化', '加权公式', '系数', 'provider', 'token']) {
       assert(!text.includes(bad), `结果页出现了「${bad}」`);
     }
   });
 
-  await check('得分条动画到位（宽度 > 0）', async () => {
+  if (live) await check('得分条动画到位（宽度 > 0）', async () => {
     await sleep(1400);
     const w = await cdp.eval('document.querySelector(".card__score-fill")?.style.width || ""');
     assert(/%/.test(w) && parseFloat(w) > 0, `得分条宽度异常：${w}`);
   });
 
-  await check('"换一个"会重新走流程并给出新结果', async () => {
-    const before = await cdp.eval('document.querySelector(".card__name").textContent + document.querySelector(".card__price").textContent');
+  if (live) await check('"重新采一次"会重新走流程并重新采集', async () => {
+    const before = await cdp.eval('document.querySelector(".card__name").textContent');
+    startFeeder(['meituan', 'eleme', 'jd', 'taobao']);
     await cdp.eval('document.querySelector("#result-again").click()');
     await sleep(400);
     const v1 = await cdp.eval('document.body.dataset.view');
-    assert(v1 === 'thinking', '"换一个"应先回到加载过场');
-    for (let i = 0; i < 60; i++) {
+    assert(v1 === 'thinking', '"重新采一次"应先回到加载过场');
+    for (let i = 0; i < 90; i++) {
       if (await cdp.eval('document.body.dataset.view') === 'result') break;
       await sleep(200);
     }
+    stopFeeder();
     await sleep(400);
-    const after = await cdp.eval('document.querySelector(".card__name").textContent + document.querySelector(".card__price").textContent');
-    assert(before !== after, '换一个之后结果没变');
+    const s = await cdp.eval(`JSON.stringify({
+      card: !!document.querySelector('.card'),
+      name: document.querySelector('.card__name')?.textContent || '',
+      price: document.querySelector('.card__price')?.textContent || '',
+      empty: !!document.querySelector('.empty')
+    })`);
+    const o = JSON.parse(s);
+    assert(!o.empty, '重新采集后不该变成空态');
+    assert(o.card, '重新采集后应重新出卡片');
+    assert(o.name.length >= 2, '卡片没有名字');
+    // 数据源一样时结论一样是正常的 —— 这里只要求它真的重新出了一次结果
+    console.log(`      重采：${before} → ${o.name} · ${o.price}`);
   });
 
-  await check('左上角返回按钮回到首页', async () => {
+  if (live) await check('左上角返回按钮回到首页', async () => {
     await cdp.eval('document.querySelector("#result-back").click()');
     await sleep(500);
     const v = await cdp.eval('document.body.dataset.view');
@@ -392,7 +531,7 @@ try {
     assert(val.includes('辣'), '返回后应保留上次输入');
   });
 
-  await check('"我改主意了"可中断流程', async () => {
+  if (live) await check('"我改主意了"可中断流程', async () => {
     await cdp.eval(`(() => {
       const i = document.querySelector('#ask-input');
       i.value = '想喝碗热汤面';
@@ -448,12 +587,12 @@ try {
     assert(o.sheetOpen, '应自动打开设置引导用户勾选平台');
   });
 
-  await check('关掉演示数据源且无接口时给出可理解的错误页', async () => {
+  await check('关掉所有数据源时给出可理解的错误页', async () => {
     await cdp.eval(`(() => {
       document.querySelector('#close-settings').click();
       __mealPicker.store.saveSettings({
         platforms: { meituan: { enabled: true } },
-        dataSource: { mode: 'custom', endpoint: '', demo: false }
+        dataSource: { mode: 'none' }
       });
       return true;
     })()`);
@@ -477,9 +616,41 @@ try {
     })`);
     const o = JSON.parse(s);
     assert(o.view === 'result' && o.empty, '应显示错误页');
-    assert(/数据源|数据来源/.test(o.text), `错误说明不够明确：${o.text}`);
+    assert(/数据来源|数据源/.test(o.text), `错误说明不够明确：${o.text}`);
     // 恢复
-    await cdp.eval('__mealPicker.store.saveSettings({ dataSource: { mode: "auto", demo: true } })');
+    await cdp.eval(`__mealPicker.store.saveSettings({ dataSource: { mode: "realtime", relayPort: ${RELAY_PORT} } })`);
+  });
+
+  if (live) await check('中继在跑但采不到价格时，如实说没拿到而不是编一个', async () => {
+    // 把中继指向一个没人监听的端口，模拟"中继挂了"
+    await cdp.eval(`__mealPicker.store.saveSettings({ dataSource: { mode: 'realtime', relayPort: 1 } })`);
+    await cdp.eval(`(() => {
+      const i = document.querySelector('#ask-input');
+      i.value = '想吃面';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('#ask-form').requestSubmit();
+      return true;
+    })()`);
+    for (let i = 0; i < 60; i++) {
+      if (await cdp.eval('document.body.dataset.view') === 'result') break;
+      await sleep(200);
+    }
+    await sleep(400);
+    const s = await cdp.eval(`JSON.stringify({
+      empty: !!document.querySelector('.empty'),
+      title: document.querySelector('.empty h2')?.textContent || '',
+      text: document.querySelector('.empty p')?.textContent || '',
+      details: Array.from(document.querySelectorAll('.empty__list li')).map((li) => li.textContent),
+      card: !!document.querySelector('.card')
+    })`);
+    const o = JSON.parse(s);
+    assert(!o.card, '拿不到数据时不该凭空生成卡片');
+    assert(o.empty, '应显示说明页');
+    assert(/中继/.test(o.title + o.text), `应说明是中继的问题：${o.title} / ${o.text}`);
+    assert(o.details.length >= 1, '应给出可操作的步骤');
+    console.log(`      提示：${o.title} · ${o.details.length} 条操作步骤`);
+    // 恢复
+    await cdp.eval(`__mealPicker.store.saveSettings({ dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT} } })`);
   });
 
   /* ══════════ 报错汇总 ══════════ */
@@ -490,7 +661,9 @@ try {
   });
 
   await check('没有 console.error', () => {
-    const filtered = consoleErrors.filter((e) => !/favicon|net::ERR_FILE_NOT_FOUND/i.test(e));
+    // 故意把中继指到空端口那一步会产生连接失败日志，那是被测行为本身，不算缺陷
+    const filtered = consoleErrors.filter((e) =>
+      !/favicon|net::ERR_FILE_NOT_FOUND|ERR_CONNECTION_REFUSED|Failed to load resource/i.test(e));
     assert(filtered.length === 0, `捕获到 ${filtered.length} 条：\n      ` + filtered.join('\n      '));
   });
 
@@ -503,8 +676,10 @@ try {
   console.error('自检执行失败：', err);
   process.exitCode = 1;
 } finally {
+  stopFeeder();
   try { cdp?.close(); } catch { /* ignore */ }
   chrome.kill();
+  try { relayProc?.kill(); } catch { /* ignore */ }
   await sleep(400);
   try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
 }

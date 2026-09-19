@@ -4,6 +4,9 @@ node_modules/
 .tmp-svg/
 *.log
 
+# 构建产物（发行版以 CI 在干净环境重建的 Release 文件为准）
+dist/
+
 # 本地预览与截图
 .preview-*.png
 .preview-*.html

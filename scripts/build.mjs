@@ -117,6 +117,15 @@ const singlePath = join(dist, 'meal-picker.html');
 writeFileSync(singlePath, single, 'utf8');
 log(`  单文件体积：${(statSync(singlePath).size / 1024).toFixed(1)} KB`);
 
+// 采集器脚本也单独放一份：用户要在油猴里装它，单独下载最方便
+const collectorOut = join(dist, 'meal-picker-collector.user.js');
+const collectorSrcFile = join(root, 'collector', 'meal-picker-collector.user.js');
+if (existsSync(collectorSrcFile)) {
+  // 下载版把端口占位符换成默认值，直接装也能用（中继默认 8765）
+  writeFileSync(collectorOut, readFileSync(collectorSrcFile, 'utf8').replace('__RELAY_PORT__', '8765'), 'utf8');
+  log(`  采集器脚本：${(statSync(collectorOut).size / 1024).toFixed(1)} KB`);
+}
+
 /* ══════════ 3. 目录版 ══════════ */
 log('▸ 复制目录版…');
 copyTree(web, join(dist, 'web'));
@@ -124,6 +133,11 @@ copyTree(web, join(dist, 'web'));
 if (existsSync(dishes)) copyTree(dishes, join(dist, 'assets', 'dishes'));
 // 预览页在发行包里没意义，去掉
 rmSync(join(dist, 'assets', 'dishes', 'preview.html'), { force: true });
+// 中继 + 采集器：实时比价必需
+const relaySrc = join(root, 'relay');
+const collectorSrc = join(root, 'collector');
+if (existsSync(relaySrc)) copyTree(relaySrc, join(dist, 'relay'));
+if (existsSync(collectorSrc)) copyTree(collectorSrc, join(dist, 'collector'));
 log('  目录版就绪');
 
 /* ══════════ 4. 发行包 zip ══════════ */
@@ -132,6 +146,8 @@ const stage = join(tmp, `meal-picker-${version}`);
 mkdirSync(stage, { recursive: true });
 copyFileSync(singlePath, join(stage, 'meal-picker.html'));
 copyTree(join(dist, 'web'), join(stage, 'web'));
+if (existsSync(join(dist, 'relay'))) copyTree(join(dist, 'relay'), join(stage, 'relay'));
+if (existsSync(join(dist, 'collector'))) copyTree(join(dist, 'collector'), join(stage, 'collector'));
 for (const extra of ['README.md', 'LICENSE']) {
   const p = join(root, extra);
   if (existsSync(p)) copyFileSync(p, join(stage, extra));
@@ -156,6 +172,9 @@ const lines = [
   `${sha256(singlePath)}  meal-picker.html`,
   `${sha256(zipPath)}  meal-picker-${version}.zip`,
 ];
+if (existsSync(collectorOut)) {
+  lines.push(`${sha256(collectorOut)}  meal-picker-collector.user.js`);
+}
 writeFileSync(join(dist, 'SHA256SUMS.txt'), lines.join('\n') + '\n', 'utf8');
 
 rmSync(tmp, { recursive: true, force: true });
@@ -175,6 +194,7 @@ const walk = (dir, base = dir) => {
 log('\n✔ 打包完成，dist/ 内容：');
 const files = walk(dist).sort((a, b) => a.path.localeCompare(b.path));
 const sep = process.platform === 'win32' ? '\\' : '/';
-const top = files.filter((f) => !f.path.startsWith('web' + sep) && !f.path.startsWith('assets' + sep));
+const top = files.filter((f) => !f.path.startsWith('web' + sep) && !f.path.startsWith('assets' + sep)
+  && !f.path.startsWith('relay' + sep) && !f.path.startsWith('collector' + sep));
 for (const f of top) log(`   ${(f.size / 1024).toFixed(1).padStart(8)} KB  ${f.path}`);
-log(`   另有 ${files.length - top.length} 个文件在 web/ 与 assets/ 下`);
+log(`   另有 ${files.length - top.length} 个文件在 web/ · assets/ · relay/ · collector/ 下`);

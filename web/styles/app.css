@@ -782,6 +782,68 @@
 .empty__art .ico { width: 42px; height: 42px; stroke-width: 1.5; }
 .empty h2 { margin: 0; font-size: 19px; }
 .empty p { margin: 0; font-size: 14px; color: var(--text-soft); line-height: 1.7; }
+.empty__list {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  list-style: none;
+  text-align: left;
+  width: 100%;
+  border-radius: var(--r-md);
+  background: var(--c-cream-deep);
+  border: 1px solid var(--c-sand-line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.empty__list li {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  padding-left: 14px;
+  position: relative;
+}
+.empty__list li::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 8px;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: .7;
+}
+
+/* 中继状态 */
+.relay-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--c-cream-deep);
+  border: 1px solid var(--c-sand-line);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.relay-status__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--c-sand);
+  flex: none;
+}
+.relay-status__dot.is-ok { background: var(--c-matcha); box-shadow: 0 0 0 3px rgba(111,176,127,.18); }
+.relay-status__dot.is-off { background: var(--c-tomato); box-shadow: 0 0 0 3px rgba(229,83,61,.16); }
+.relay-status__dot.is-checking { animation: pulse 1.2s ease-in-out infinite; }
+.relay-status__text { color: var(--text-soft); }
+.relay-status__text b { color: var(--text); font-weight: 600; }
+.relay-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.relay-actions code {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--c-cream-deep);
+  border: 1px solid var(--c-sand-line);
+}
 
 /* 骨架屏 */
 .skeleton {

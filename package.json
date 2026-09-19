@@ -1,14 +1,19 @@
 {
   "name": "meal-picker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "选餐 · 多平台外卖加权比价小工具（纯前端，零构建）",
+  "description": "选餐 · 多平台外卖实时比价小工具（本地中继 + 浏览器采集器，零模拟数据）",
   "scripts": {
+    "start": "node relay/server.mjs",
+    "relay": "node relay/server.mjs",
     "art": "node scripts/embed-art.mjs",
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "e2e:llm": "node scripts/e2e-llm.mjs",
+    "e2e:dist": "node scripts/e2e-dist.mjs",
+    "probe": "node scripts/probe-realtime.mjs"
   },
   "engines": { "node": ">=18" }
 }

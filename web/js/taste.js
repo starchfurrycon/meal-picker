@@ -181,12 +181,10 @@ export function extractBuiltin(text) {
   }
   entityHits.sort((a, b) => b.w.length - a.w.length);
 
-  // 2) 品类代表套餐名作为关键词（命中率最高的搜索词）
+  // 2) 品类代表词作为关键词（命中率最高的搜索词）
   if (kindMeta.length) {
     for (const km of kindMeta.slice(0, 2)) {
-      const packs = km.packs;
-      push(packs[0]);
-      push(packs[1] || packs[0]);
+      push(km.sample || km.label);
       push(km.label);
     }
   }
@@ -233,11 +231,11 @@ export function extractBuiltin(text) {
     }
     if (kindMeta.length) {
       for (const km of kindMeta.slice(0, 2)) {
-        push(km.packs[0]);
+        push(km.sample || km.label);
         push(km.label);
       }
     } else {
-      push(kindPool[0].packs[0]);
+      push(kindPool[0].sample || kindPool[0].label);
       push(kindPool[0].label);
     }
     push('热门套餐');

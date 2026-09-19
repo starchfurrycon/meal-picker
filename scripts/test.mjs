@@ -3,11 +3,17 @@
  *
  *   node scripts/test.mjs
  *
- * 覆盖：内置语义转写 → 演示数据源搜索 → 加权排名 → 推荐理由
- *      凭据保险箱加密/解密/口令模式 → 设置读写
+ * 覆盖：内置语义转写 → 采集结果规范化 → 加权排名 → 推荐理由
+ *      本地中继 API → 凭据保险箱加密/解密/口令模式 → 设置读写
  */
 
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, '..');
 
 /* ── 最小浏览器环境桩 ── */
 const storage = new Map();
@@ -23,7 +29,8 @@ globalThis.localStorage = {
 if (!globalThis.crypto?.subtle) throw new Error('需要 Node 18+ 的 WebCrypto 支持');
 
 const { extractBuiltin, mergePrefs } = await import('../web/js/taste.js');
-const { searchAll, resolveSource, demoPlatformSearch } = await import('../web/js/adapters.js');
+const { normalizeOffer, normalizeBatch, resolveSource, enabledPlatforms } = await import('../web/js/adapters.js');
+const { relayBase, searchUrlFor } = await import('../web/js/realtime.js');
 const { scoreCandidates, buildReasons, buildQuotes, summarize } = await import('../web/js/engine.js');
 const { estimateCost } = await import('../web/js/llm.js');
 const { DEFAULT_SETTINGS, PLATFORMS } = await import('../web/js/catalog.js');
@@ -119,8 +126,8 @@ t('设置里的口味会合并进来', () => {
   assert.equal(r.budget, 25);
 });
 
-/* ══════════ 2. 演示数据源 ══════════ */
-console.log('\n[2] 数据源');
+/* ══════════ 2. 采集结果规范化 ══════════ */
+console.log('\n[2] 采集结果 → 候选');
 
 const settings = structuredClone(DEFAULT_SETTINGS);
 settings.platforms.meituan.enabled = true;
@@ -130,56 +137,253 @@ settings.platforms.taobao.enabled = true;
 
 const parsed = extractBuiltin('想吃点辣的但是别太贵，一个人吃，40以内');
 
-t('确定性：同参数两次结果一致', () => {
-  const a = demoPlatformSearch('meituan', parsed, settings, {}, 0);
-  const b = demoPlatformSearch('meituan', parsed, settings, {}, 0);
-  assert.equal(JSON.stringify(a), JSON.stringify(b));
-});
+/** 模拟采集器从平台接口读到的原始记录（结构与 collector 里的 normalizeRecord 输出一致） */
+const COLLECTED = {
+  meituan: [
+    {
+      merchant: '蜀香源川菜馆', rating: 4.7, reviewCount: 2381,
+      good: [
+        { text: '分量是真的足，一个人吃撑了', tag: '份量足' },
+        { text: '出餐快，到手还是烫的', tag: '出餐快' },
+      ],
+      bad: [{ text: '微微有点咸，但整体很香', tag: '偏咸' }],
+      packages: [{
+        id: 'mt-1', name: '水煮肉片套餐', dish: '水煮肉片套餐', art: 'hotpot',
+        basePrice: 42, shippingFee: 4, packingFee: 1,
+        deals: [{ kind: 'coupon', label: '满 40 减 12', amount: 12, threshold: 40 }],
+        finalPrice: 35, etaMin: 32, rating: 4.7, reviewCount: 2381, monthlySales: 890,
+        provenance: { api: 'https://wx.waimai.meituan.com/weapp/v1/poi/food', at: Date.now() },
+      }],
+    },
+    {
+      merchant: '老碗面', rating: 4.4, reviewCount: 902,
+      good: [{ text: '味道稳定，回购第 N 次了', tag: '稳定' }],
+      bad: [],
+      packages: [{
+        id: 'mt-2', name: '油泼面', dish: '油泼面', art: 'noodles',
+        basePrice: 26, shippingFee: 3, packingFee: 1,
+        deals: [], finalPrice: 30, etaMin: 25, rating: 4.4, reviewCount: 902, monthlySales: 420,
+      }],
+    },
+  ],
+  eleme: [
+    {
+      merchant: '麻辣诱惑', rating: 4.6, reviewCount: 1502,
+      good: [
+        { text: '辣度刚好，够味但不烧胃', tag: '辣度合适' },
+        { text: '性价比在这个价位里很难找到对手', tag: '性价比高' },
+      ],
+      bad: [{ text: '份量比图片少一些', tag: '图文有差' }],
+      packages: [{
+        id: 'el-1', name: '麻辣香锅双人份', dish: '麻辣香锅双人份', art: 'hotpot',
+        basePrice: 58, shippingFee: 0, packingFee: 2,
+        deals: [{ kind: 'discount', label: '7.5 折', amount: 14.5 }],
+        finalPrice: 45.5, etaMin: 38, rating: 4.6, reviewCount: 1502, monthlySales: 610,
+      }],
+    },
+  ],
+};
 
-t('换一批会变（salt 生效）', () => {
-  const a = demoPlatformSearch('meituan', parsed, settings, {}, 0);
-  const b = demoPlatformSearch('meituan', parsed, settings, {}, 1);
-  assert.notEqual(JSON.stringify(a), JSON.stringify(b));
-});
-
-t('结构完整、价格自洽', () => {
-  const offers = demoPlatformSearch('meituan', parsed, settings, {}, 0);
-  assert.ok(offers.length >= 4, '商家太少');
+t('规范化：字段齐全、价格自洽', () => {
+  const offers = normalizeBatch(COLLECTED.meituan, 'meituan');
+  assert.equal(offers.length, 2, `应有 2 家店，实际 ${offers.length}`);
   for (const o of offers) {
-    assert.ok(o.merchant && o.merchant.length >= 2, '店名为空');
-    assert.ok(o.rating >= 3.5 && o.rating <= 5, `评分越界 ${o.rating}`);
-    assert.ok(o.good.length >= 2, '好评不足');
+    assert.ok(o.merchant.length >= 2, '店名为空');
+    assert.equal(o.platform, 'meituan');
+    assert.equal(o.source, 'realtime');
     for (const p of o.packages) {
       assert.ok(p.finalPrice > 0, '价格非正');
-      assert.ok(p.basePrice >= p.finalPrice, `原价 ${p.basePrice} < 到手 ${p.finalPrice}`);
-      assert.ok(p.etaMin >= 12 && p.etaMin <= 75, `时长越界 ${p.etaMin}`);
       const dealSum = p.deals.reduce((s, d) => s + d.amount, 0);
-      const expect = Math.max(1, Math.round((p.basePrice - dealSum + p.shippingFee + p.packingFee) * 100) / 100);
-      assert.ok(Math.abs(expect - p.finalPrice) < 0.02, `价格计算不符：${expect} vs ${p.finalPrice}`);
+      const expect = Math.round((p.basePrice - dealSum + p.shippingFee + p.packingFee) * 100) / 100;
+      assert.ok(Math.abs(expect - p.finalPrice) < 0.02, `价格不符：${expect} vs ${p.finalPrice}`);
       assert.ok(p.art && p.art.length > 0, '缺插画 id');
     }
   }
 });
 
-t('数据源解析：auto + 无接口 → demo', () => {
-  assert.equal(resolveSource({ mode: 'auto', endpoint: '', demo: true }, 'meituan'), 'demo');
-  assert.equal(resolveSource({ mode: 'auto', endpoint: 'https://x/y', demo: true }, 'meituan'), 'custom');
-  assert.equal(resolveSource({ mode: 'auto', endpoint: '', demo: false }, 'meituan'), 'none');
-  assert.equal(resolveSource({ mode: 'demo', endpoint: 'https://x/y', demo: false }, 'meituan'), 'demo');
-  assert.equal(resolveSource({ mode: 'custom', endpoint: '', demo: false }, 'meituan'), 'none');
+t('规范化：脏数据被挡掉，不会污染候选', () => {
+  const junk = [
+    { merchant: '', packages: [{ dish: 'x', finalPrice: 10 }] },          // 无店名
+    { merchant: '有店名', packages: [] },                                  // 无套餐
+    { merchant: '价格为零', packages: [{ dish: 'y', finalPrice: 0 }] },    // 价格非正
+    null,
+    'not an object',
+  ];
+  const out = normalizeBatch(junk, 'jd');
+  assert.equal(out.length, 0, `应全部过滤，实际留下 ${out.length}`);
 });
 
-await ta('searchAll 并发取回多平台', async () => {
-  const r = await searchAll({ parsed, settings, credentials: {}, salt: 0 });
-  assert.equal(r.offers.length, 4 * 4, `4 个平台 × 4 家店，实际 ${r.offers.length}`);
-  assert.equal(new Set(r.offers.map((o) => o.platform)).size, 4);
-  assert.ok(r.notes.every((n) => !n.error), '不应有错误');
+t('规范化：缺字段时用安全默认值，不抛错', () => {
+  const o = normalizeOffer({ merchant: '仅店名', packages: [{ dish: '盖饭', basePrice: 20 }] }, 'taobao');
+  const p = o.packages[0];
+  assert.equal(p.finalPrice, 20);
+  assert.equal(p.shippingFee, 0);
+  assert.deepEqual(p.deals, []);
+  assert.equal(o.rating, 0);
 });
+
+t('数据源解析：默认走实时采集', () => {
+  assert.equal(resolveSource({ mode: 'realtime' }, 'meituan'), 'realtime');
+  assert.equal(resolveSource({ mode: 'auto', endpoint: '' }, 'meituan'), 'realtime');
+  assert.equal(resolveSource({ mode: 'auto', endpoint: 'https://x/y' }, 'meituan'), 'custom');
+  assert.equal(resolveSource({ mode: 'custom', endpoint: '' }, 'meituan'), 'none');
+  assert.equal(resolveSource({ mode: 'custom', endpoint: 'https://x/y' }, 'meituan'), 'custom');
+  assert.equal(resolveSource({ mode: 'none' }, 'meituan'), 'none');
+  assert.equal(resolveSource(undefined, 'meituan'), 'realtime', '缺配置时也应有默认');
+});
+
+t('平台清单与搜索地址', () => {
+  assert.equal(enabledPlatforms(settings).length, 4);
+  for (const p of PLATFORMS) {
+    const url = searchUrlFor(p.id, '麻辣香锅');
+    assert.ok(url.startsWith('https://'), `${p.id} 搜索地址不合法：${url}`);
+    assert.ok(url.includes(encodeURIComponent('麻辣香锅')), `${p.id} 没有带上关键词`);
+  }
+});
+
+t('中继地址可用设置里的端口', () => {
+  assert.equal(relayBase({ dataSource: { relayPort: 9000 } }), 'http://127.0.0.1:9000');
+  assert.equal(relayBase({}), 'http://127.0.0.1:8765');
+  assert.equal(relayBase(undefined), 'http://127.0.0.1:8765');
+});
+
+/* ══════════ 2b. 本地中继服务 ══════════ */
+console.log('\n[2b] 本地中继');
+
+const RELAY_PORT = 18700 + Math.floor(Math.random() * 200);
+const relay = spawn(process.execPath, [join(root, 'relay', 'server.mjs'), '--port', String(RELAY_PORT), '--quiet', '--no-open'], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+let relayErr = '';
+relay.stderr.on('data', (d) => { relayErr += String(d); });
+
+const R = (p) => `http://127.0.0.1:${RELAY_PORT}${p}`;
+
+async function waitRelay(t = 8000) {
+  const end = Date.now() + t;
+  while (Date.now() < end) {
+    try { const r = await fetch(R('/api/health')); if (r.ok) return true; } catch { /* 等 */ }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw new Error('中继没起来：' + relayErr);
+}
+
+let relayUp = false;
+try { relayUp = await waitRelay(); } catch (e) { console.log('  ✗ ' + e.message); fail++; }
+
+if (relayUp) {
+  await ta('健康检查返回自身信息', async () => {
+    const j = await (await fetch(R('/api/health'))).json();
+    assert.equal(j.ok, true);
+    assert.equal(j.app, 'meal-picker-relay');
+    assert.equal(j.collectorSeen, null, '还没采集器时应为 null');
+  });
+
+  await ta('托管工具页面与采集器脚本', async () => {
+    const html = await (await fetch(R('/'))).text();
+    assert.ok(html.includes('ask-input'), '首页没有输入框');
+    const js = await (await fetch(R('/collector.user.js'))).text();
+    assert.ok(js.includes('==UserScript=='), '采集器脚本头缺失');
+    assert.ok(!js.includes('__RELAY_PORT__'), '端口占位符没被替换');
+    const m = js.match(/const RELAY_PORT = (\d+);/);
+    assert.ok(m, '采集器里没有 RELAY_PORT');
+    assert.equal(Number(m[1]), RELAY_PORT, `采集器里的端口不对：${m[1]}`);
+    const install = await (await fetch(R('/install'))).text();
+    assert.ok(install.includes('Tampermonkey'), '安装页内容不对');
+  });
+
+  await ta('采集任务：登记 → 回传 → 取价', async () => {
+    const reg = await (await fetch(R('/api/collect'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: '麻辣香锅', platforms: ['meituan', 'eleme'] }),
+    })).json();
+    assert.equal(reg.ok, true);
+    assert.deepEqual(reg.task.platforms, ['meituan', 'eleme']);
+    assert.equal(reg.task.done, false);
+
+    // 采集器领活
+    const tk = await (await fetch(R('/api/task?platform=meituan'))).json();
+    assert.ok(tk.task, '采集器应该能领到任务');
+    const none = await (await fetch(R('/api/task?platform=jd'))).json();
+    assert.equal(none.task, null, '不在任务内的平台不该领到活');
+
+    // 回传
+    const post = await (await fetch(R('/api/prices'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: 'meituan', keyword: '麻辣香锅', offers: COLLECTED.meituan }),
+    })).json();
+    assert.equal(post.ok, true);
+    assert.deepEqual(post.progress.received, ['meituan']);
+    assert.deepEqual(post.progress.missing, ['eleme']);
+    assert.equal(post.progress.done, false);
+
+    const prices = await (await fetch(R('/api/prices'))).json();
+    assert.equal(prices.prices.meituan.count, 2);
+    assert.equal(prices.prices.meituan.offers.length, 2);
+
+    // 集齐
+    await fetch(R('/api/prices'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: 'eleme', keyword: '麻辣香锅', offers: COLLECTED.eleme }),
+    });
+    const after = await (await fetch(R('/api/prices'))).json();
+    assert.equal(after.progress.done, true, '两个平台都回传后应标记完成');
+  });
+
+  await ta('任务外的平台回传会被忽略', async () => {
+    const r = await (await fetch(R('/api/prices'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: 'jd', offers: [{ merchant: 'x', packages: [] }] }),
+    })).json();
+    assert.equal(r.ignored, true);
+    const prices = await (await fetch(R('/api/prices'))).json();
+    assert.equal(prices.prices.jd, undefined, '任务外的平台不该被写进价格表');
+  });
+
+  await ta('新一轮比价会清空上一轮价格（不复用缓存）', async () => {
+    await fetch(R('/api/collect'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: '日料', platforms: ['jd'] }),
+    });
+    const prices = await (await fetch(R('/api/prices'))).json();
+    assert.equal(Object.keys(prices.prices).length, 0, '旧价格应被清空');
+    assert.deepEqual(prices.progress.missing, ['jd']);
+  });
+
+  await ta('缺少参数时返回 400 而不是崩掉', async () => {
+    const r1 = await fetch(R('/api/collect'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: '' }),
+    });
+    assert.equal(r1.status, 400);
+    const r2 = await fetch(R('/api/prices'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offers: [] }),
+    });
+    assert.equal(r2.status, 400);
+    const r3 = await fetch(R('/api/prices'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{坏 JSON',
+    });
+    assert.equal(r3.status, 400, '坏 JSON 不该让服务挂掉');
+  });
+
+  await ta('中继进程仍然活着（没被请求打挂）', async () => {
+    assert.equal(relay.exitCode, null, `中继退出了，退出码 ${relay.exitCode}`);
+    const j = await (await fetch(R('/api/health'))).json();
+    assert.equal(j.ok, true);
+  });
+}
+
+relay.kill();
 
 /* ══════════ 3. 加权排名 ══════════ */
 console.log('\n[3] 加权排名');
 
-const { offers } = await searchAll({ parsed, settings, credentials: {}, salt: 0 });
+const offers = normalizeBatch(COLLECTED.meituan, 'meituan')
+  .concat(normalizeBatch(COLLECTED.eleme, 'eleme'));
 const candidates = [];
 for (const o of offers) {
   for (const pk of o.packages) {

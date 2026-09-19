@@ -36,6 +36,46 @@ const work = mkdtempSync(join(tmpdir(), 'meal picker dist '));  // 故意带空�
 const singleDest = join(work, 'meal-picker.html');
 copyFileSync(singleSrc, singleDest);
 
+/* ── 本地中继 + 假采集器 ── */
+const RELAY_PORT = 19100 + Math.floor(Math.random() * 300);
+const relayProc = spawn(process.execPath, [
+  join(root, 'relay', 'server.mjs'), '--port', String(RELAY_PORT), '--quiet', '--no-open',
+], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+const FIXTURE = {
+  merchant: '蜀香源川菜馆', rating: 4.7, reviewCount: 2381,
+  good: [{ text: '分量是真的足，一个人吃撑了', tag: '份量足' }, { text: '出餐快，到手还是烫的', tag: '出餐快' }],
+  bad: [{ text: '微微有点咸，但整体很香', tag: '偏咸' }],
+  packages: [{
+    id: 'mt-1', name: '水煮肉片套餐', dish: '水煮肉片套餐', art: 'hotpot',
+    basePrice: 42, shippingFee: 4, packingFee: 1,
+    deals: [{ kind: 'coupon', label: '满 40 减 12', amount: 12, threshold: 40 }],
+    finalPrice: 35, etaMin: 32, rating: 4.7, reviewCount: 2381, monthlySales: 890,
+  }],
+};
+let feeder = null;
+function startFeeder() {
+  stopFeeder();
+  const platforms = ['meituan', 'eleme', 'jd', 'taobao'];
+  const push = async () => {
+    try {
+      const snap = await (await fetch(`http://127.0.0.1:${RELAY_PORT}/api/prices`)).json();
+      const done = new Set(Object.keys(snap.prices || {}));
+      for (const id of platforms) {
+        if (done.has(id)) continue;
+        await fetch(`http://127.0.0.1:${RELAY_PORT}/api/prices`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform: id, keyword: 'test', offers: [FIXTURE] }),
+        });
+      }
+    } catch { /* ignore */ }
+  };
+  push();
+  feeder = setInterval(push, 600);
+}
+function stopFeeder() { if (feeder) { clearInterval(feeder); feeder = null; } }
+
 const DEBUG_PORT = 10200 + Math.floor(Math.random() * 400);
 const profile = mkdtempSync(join(tmpdir(), 'mealpicker-dist-'));
 const chrome = spawn(bin, [
@@ -161,29 +201,35 @@ try {
     await cdp.eval(`(() => {
       __mealPicker.store.saveSettings({ platforms: {
         meituan: { enabled: true }, eleme: { enabled: true }, jd: { enabled: true }, taobao: { enabled: true }
-      }, dataSource: { mode: 'auto', demo: true } });
+      }, dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000 } });
       const i = document.querySelector('#ask-input');
       i.value = '想吃点辣的，一个人，四十以内';
       i.dispatchEvent(new Event('input', { bubbles: true }));
       document.querySelector('#ask-form').requestSubmit();
       return true;
     })()`);
-    for (let i = 0; i < 80; i++) {
+    startFeeder();
+    for (let i = 0; i < 110; i++) {
       if (await cdp.eval('document.body.dataset.view') === 'result') break;
       await sleep(200);
     }
+    stopFeeder();
     await sleep(500);
     const s = await cdp.eval(`JSON.stringify({
       view: document.body.dataset.view,
       card: !!document.querySelector('.card'),
       price: document.querySelector('.card__price')?.textContent || '',
-      reasons: document.querySelectorAll('.card__why li').length
+      reasons: document.querySelectorAll('.card__why li').length,
+      steps: document.querySelectorAll('#think-steps li').length,
+      note: document.querySelector('.result__note')?.innerText || ''
     })`);
     const o = JSON.parse(s);
     assert(o.view === 'result', `停在 ${o.view}`);
     assert(o.card, '卡片缺失');
     assert(/¥\d/.test(o.price), `价格异常：${o.price}`);
     assert(o.reasons >= 2, '理由不足');
+    assert(o.steps === 6, `过场应有 6 步，实际 ${o.steps}`);
+    assert(/实时采集/.test(o.note), `底部应说明价格来自实时采集：${o.note}`);
     console.log(`      卡片：${o.price} · ${o.reasons} 条理由`);
   });
 
@@ -240,8 +286,10 @@ try {
   console.error('自检执行失败：', e);
   process.exitCode = 1;
 } finally {
+  stopFeeder();
   try { cdp?.close(); } catch { /* ignore */ }
   chrome.kill();
+  try { relayProc?.kill(); } catch { /* ignore */ }
   await sleep(400);
   try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
   try { rmSync(work, { recursive: true, force: true }); } catch { /* ignore */ }
