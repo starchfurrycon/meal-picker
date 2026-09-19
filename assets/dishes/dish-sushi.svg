@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="寿司插画">
+  <circle cx="100" cy="100" r="88" fill="#FFF4E6"/>
+  <rect x="6" y="150" width="188" height="26" rx="13" fill="#F0DFC8"/>
+  <ellipse cx="100" cy="156" rx="52" ry="9" fill="#E2CDB2"/>
+  <rect x="22" y="114" width="156" height="44" rx="16" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="110" r="24" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="110" r="13" fill="#FF8A3D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="102" cy="108" r="24" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="102" cy="108" r="13" fill="#6FB07F" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="138" cy="110" r="24" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="138" cy="110" r="13" fill="#E5533D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 128 q-10 0 -12 8 q8 6 12 -2 Z" fill="#FFC857" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M178 130 q10 2 10 10 q-8 4 -12 -4 Z" fill="#6FB07F" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30 100 L104 30" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 110 L116 40" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

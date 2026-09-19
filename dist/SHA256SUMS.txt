@@ -1,0 +1,2 @@
+c33338f89bcffe905d7bae1877e5a34b01a0174fb400a881e12756c2064a6fda  meal-picker.html
+6193e07ab5cf3926c7f789b7d6fadfcc36b14b31beb9fe8e718b13ada33415ee  meal-picker-1.0.0.zip

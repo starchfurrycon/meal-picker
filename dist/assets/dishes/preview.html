@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>菜品插画预览</title>
+<style>
+  body { margin:0; padding:16px; background:#FFF7EF; font:13px/1.4 system-ui,sans-serif; color:#4A3B2E; }
+  .grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .cell { background:#fff; border-radius:16px; padding:8px; text-align:center; box-shadow:0 2px 10px rgba(74,59,46,.08); }
+  svg { width:100%; height:auto; display:block; }
+  .name { margin-top:4px; font-weight:700; }
+  h1 { font-size:16px; margin:0 0 12px; }
+</style>
+</head>
+<body>
+<h1>菜品插画预览（13 张 · 统一风格检查）</h1>
+<div class="grid" id="grid"></div>
+<script>
+const IDS = ["noodles","rice","burger","pizza","hotpot","bbq","dumpling","sushi","salad","dessert","congee","crayfish","default"];
+const LABEL = {noodles:"面食",rice:"盖饭",burger:"汉堡炸鸡",pizza:"披萨",hotpot:"火锅",bbq:"烧烤",dumpling:"饺子包子",sushi:"寿司日料",salad:"沙拉轻食",dessert:"甜品奶茶",congee:"粥汤",crayfish:"小龙虾",default:"任意餐食"};
+const grid = document.getElementById("grid");
+fetch("sprite.svg").then(r=>r.text()).then(txt=>{
+  const doc = new DOMParser().parseFromString(txt, "image/svg+xml");
+  for (const id of IDS) {
+    const sym = doc.getElementById("dish-" + id);
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const holder = document.createElement("div");
+    holder.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">' + sym.innerHTML + '</svg>';
+    cell.append(holder.firstElementChild);
+    const n = document.createElement("div");
+    n.className = "name";
+    n.textContent = LABEL[id] + " · " + id;
+    cell.append(n);
+    grid.append(cell);
+  }
+  document.title = "READY";
+});
+</script>
+</body>
+</html>

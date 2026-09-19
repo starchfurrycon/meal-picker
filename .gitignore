@@ -1,0 +1,28 @@
+# 依赖与临时目录
+node_modules/
+.build-tmp/
+.tmp-svg/
+*.log
+
+# 构建输出里的临时/中间文件（dist/ 本身是要提交的，见下）
+dist/**/*.tmp
+
+# 本地预览与截图
+.preview-*.png
+.preview-*.html
+build-out.txt
+build-err.txt
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 绝不提交任何凭据
+.env
+.env.*
+*.pem
+*.key
+credentials*.json

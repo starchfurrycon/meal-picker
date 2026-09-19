@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="小龙虾插画">
+  <circle cx="100" cy="100" r="88" fill="#FFF4E6"/>
+  <rect x="6" y="150" width="188" height="26" rx="13" fill="#F0DFC8"/>
+  <ellipse cx="100" cy="158" rx="60" ry="10" fill="#E2CDB2"/>
+  <ellipse cx="100" cy="144" rx="68" ry="22" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M132 74 q22 -4 34 14 q-6 12 -22 10 q-10 -10 -12 -24 Z" fill="#E5533D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M164 88 l16 -8 l-2 16 Z" fill="#E5533D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M96 96 q6 20 -6 34 q-8 -14 6 -34 Z" fill="#E5533D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M56 78 q16 -6 30 4 q4 22 -12 28 q-20 -8 -18 -32 Z" fill="#E5533D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M88 84 q16 6 30 -2 q-6 22 -26 22 q-12 -8 -4 -20 Z" fill="#E5533D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M46 66 L28 44" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 74 L20 60" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="72" cy="72" r="4" fill="#4A3B2E"/>
+  <circle cx="90" cy="70" r="4" fill="#4A3B2E"/>
+  <circle cx="66" cy="120" r="5" fill="#FF8A3D"/>
+  <circle cx="94" cy="128" r="5" fill="#FF8A3D"/>
+  <circle cx="122" cy="122" r="5" fill="#FF8A3D"/>
+  <circle cx="52" cy="128" r="5" fill="#E5533D"/>
+  <circle cx="142" cy="126" r="5" fill="#E5533D"/>
+</svg>

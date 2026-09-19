@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="通用餐食插画">
+  <circle cx="100" cy="100" r="88" fill="#FFF4E6"/>
+  <rect x="6" y="150" width="188" height="26" rx="13" fill="#F0DFC8"/>
+  <ellipse cx="96" cy="152" rx="58" ry="9" fill="#E2CDB2"/>
+  <ellipse cx="50" cy="106" rx="12" ry="10" transform="rotate(-32 50 106)" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 82 L42 116" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M60 86 L55 118" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="96" cy="120" rx="58" ry="30" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="96" cy="118" rx="40" ry="19" fill="#FFF4E6"/>
+  <path d="M148 90 L170 52" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M156 98 L176 62" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

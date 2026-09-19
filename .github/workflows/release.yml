@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（例如 v1.0.0）'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 校验 package.json 与 tag 是否一致
+        id: ver
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "package.json=$PKG tag=$REF"
+          if [ "v$PKG" != "$REF" ]; then
+            echo "::error::tag($REF) 与 package.json 版本(v$PKG) 不一致"
+            exit 1
+          fi
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          echo "tag=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: 重新生成插画内联资源
+        run: node scripts/embed-art.mjs
+
+      - name: 打包
+        run: node scripts/build.mjs
+
+      - name: 冒烟测试
+        run: node scripts/test.mjs
+
+      - name: 收集发行文件
+        run: |
+          mkdir -p release
+          cp "dist/meal-picker-${{ steps.ver.outputs.version }}.zip" release/
+          cp dist/meal-picker.html release/
+          cp dist/SHA256SUMS.txt release/
+          ls -la release
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: 选餐 ${{ steps.ver.outputs.tag }}
+          draft: false
+          generate_release_notes: true
+          body: |
+            ## 选餐 ${{ steps.ver.outputs.tag }}
+
+            **下载即用**：`meal-picker.html` 是单文件离线版，双击就能用，不需要联网、不需要安装任何东西。
+
+            | 文件 | 说明 |
+            | --- | --- |
+            | `meal-picker.html` | 单文件离线版（CSS/JS/插画全部内联） |
+            | `meal-picker-${{ steps.ver.outputs.version }}.zip` | 发行包：单文件 + 目录版 + 插画源文件 |
+            | `SHA256SUMS.txt` | 校验和 |
+
+            在线版：<https://starchfurrycon.github.io/meal-picker/>
+
+            > 内置演示数据源的商家名与价格均为虚构，仅供功能演示。真实价格需要接入你有权访问的接口，详见 README。
+          files: |
+            release/meal-picker.html
+            release/meal-picker-${{ steps.ver.outputs.version }}.zip
+            release/SHA256SUMS.txt

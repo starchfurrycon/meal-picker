@@ -1,0 +1,144 @@
+/* ─────────────────────────────────────────────
+   设计令牌 · 选餐
+   全部颜色 / 间距 / 圆角 / 动效集中在此，改这里即可换肤
+   ───────────────────────────────────────────── */
+:root {
+  /* 色板（与 assets/dishes 插画同一套体系） */
+  --c-cream:        #FFF7EF;
+  --c-cream-deep:   #FFF4E6;
+  --c-sand:         #F0DFC8;
+  --c-sand-line:    #E2CDB2;
+  --c-ink:          #4A3B2E;
+  --c-ink-soft:     #6B5A49;
+  --c-ink-faint:    #9C8B79;
+  --c-orange:       #FF8A3D;
+  --c-orange-deep:  #F0701E;
+  --c-tomato:       #E5533D;
+  --c-honey:        #FFC857;
+  --c-matcha:       #6FB07F;
+  --c-matcha-deep:  #3E7A52;
+  --c-cocoa:        #8B5E3C;
+  --c-plum:         #9B6BB5;
+  --c-sky:          #5AA9E6;
+  --c-white:        #FFFFFF;
+
+  /* 语义色 */
+  --bg:             var(--c-cream);
+  --surface:        rgba(255, 255, 255, .86);
+  --surface-solid:  var(--c-white);
+  --line:           rgba(74, 59, 46, .10);
+  --line-strong:    rgba(74, 59, 46, .18);
+  --text:           var(--c-ink);
+  --text-soft:      var(--c-ink-soft);
+  --text-faint:     var(--c-ink-faint);
+  --accent:         var(--c-orange);
+  --accent-deep:    var(--c-orange-deep);
+  --good:           var(--c-matcha-deep);
+
+  /* 平台色 */
+  --p-jd:      #E1251B;
+  --p-meituan: #FFC300;
+  --p-taobao:  #FF5000;
+  --p-eleme:   #1E90FF;
+
+  /* 圆角 */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 30px;
+  --r-pill: 999px;
+
+  /* 间距 */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 22px;
+  --s-6: 30px;
+  --s-7: 42px;
+  --s-8: 60px;
+
+  /* 阴影 */
+  --sh-1: 0 1px 2px rgba(74, 59, 46, .06), 0 2px 8px rgba(74, 59, 46, .05);
+  --sh-2: 0 4px 14px rgba(74, 59, 46, .08), 0 12px 32px rgba(74, 59, 46, .07);
+  --sh-3: 0 10px 30px rgba(74, 59, 46, .12), 0 30px 70px rgba(74, 59, 46, .10);
+  --sh-warm: 0 10px 26px rgba(255, 138, 61, .28);
+
+  /* 字体 */
+  --font: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans SC",
+          "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei",
+          system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* 动效 */
+  --ease-out: cubic-bezier(.22, .8, .28, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .5, 1);
+  --ease-in-out: cubic-bezier(.5, .05, .2, 1);
+  --t-fast: 160ms;
+  --t-mid: 300ms;
+  --t-slow: 520ms;
+
+  --shadow-color: 74 59 46;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            #1C1712;
+    --surface:       rgba(45, 37, 30, .82);
+    --surface-solid: #2A231C;
+    --line:          rgba(255, 240, 224, .10);
+    --line-strong:   rgba(255, 240, 224, .20);
+    --text:          #F6EADB;
+    --text-soft:     #D8C6B2;
+    --text-faint:    #A99580;
+    --c-sand:        #3A2F25;
+    --c-sand-line:   #4C3E31;
+    --sh-1: 0 1px 2px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.24);
+    --sh-2: 0 4px 14px rgba(0,0,0,.36), 0 12px 32px rgba(0,0,0,.3);
+    --sh-3: 0 10px 30px rgba(0,0,0,.45), 0 30px 70px rgba(0,0,0,.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+button, input, textarea, select {
+  font: inherit;
+  color: inherit;
+}
+
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.ico {
+  width: 1.25em;
+  height: 1.25em;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}

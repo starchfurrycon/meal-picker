@@ -1,0 +1,14 @@
+{
+  "name": "meal-picker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "选餐 · 多平台外卖加权比价小工具（纯前端，零构建）",
+  "scripts": {
+    "art": "node scripts/embed-art.mjs",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node scripts/test.mjs"
+  },
+  "engines": { "node": ">=18" }
+}

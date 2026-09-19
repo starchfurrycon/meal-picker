@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="烧烤插画">
+  <circle cx="100" cy="100" r="88" fill="#FFF4E6"/>
+  <rect x="6" y="150" width="188" height="26" rx="13" fill="#F0DFC8"/>
+  <ellipse cx="100" cy="164" rx="54" ry="8" fill="#E2CDB2"/>
+  <rect x="26" y="118" width="148" height="38" rx="10" fill="#FFFFFF" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 128 L160 128 M40 138 L160 138 M40 148 L160 148" fill="none" stroke="#E2CDB2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 118 L24 108 M166 118 L176 108" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 114 L138 46" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="64" cy="102" r="12" fill="#8B5E3C" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="88" cy="84" r="12" fill="#FF8A3D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="112" cy="66" r="12" fill="#8B5E3C" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M72 110 L168 42" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="94" cy="98" r="12" fill="#FF8A3D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="118" cy="80" r="12" fill="#8B5E3C" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="142" cy="62" r="12" fill="#FF8A3D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M100 106 L196 38" fill="none" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="124" cy="94" r="12" fill="#8B5E3C" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="148" cy="76" r="12" fill="#FF8A3D" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="170" cy="60" r="12" fill="#8B5E3C" stroke="#4A3B2E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M74 154 q8 -14 16 0 Z" fill="#FF8A3D"/>
+  <path d="M110 154 q8 -14 16 0 Z" fill="#FF8A3D"/>
+</svg>
