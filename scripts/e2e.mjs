@@ -440,10 +440,13 @@ try {
   console.log('\n[2] 主流程：输入 → 过场 → 结果');
 
   await check('准备四个启用平台、指向本地中继', async () => {
+    // collectorMode 固定成 manual：这套自检是用"假采集器"直接往中继灌价格的，
+    // 走自动模式会真去拉一个浏览器、打开真实平台页，既慢又没必要。
+    // 自动模式那条路由 scripts/e2e-browser.mjs 单独验。
     await cdp.eval(`(() => {
       __mealPicker.store.saveSettings({
         platforms: { meituan: { enabled: true }, eleme: { enabled: true }, jd: { enabled: true }, taobao: { enabled: true } },
-        dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000 }
+        dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000, collectorMode: 'manual' }
       });
       return true;
     })()`);

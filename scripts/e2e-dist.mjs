@@ -212,7 +212,7 @@ try {
     await cdp.eval(`(() => {
       __mealPicker.store.saveSettings({ platforms: {
         meituan: { enabled: true }, eleme: { enabled: true }, jd: { enabled: true }, taobao: { enabled: true }
-      }, dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000 } });
+      }, dataSource: { mode: 'realtime', relayPort: ${RELAY_PORT}, timeoutMs: 20000, collectorMode: 'manual' } });
       const i = document.querySelector('#ask-input');
       i.value = '想吃点辣的，一个人，四十以内';
       i.dispatchEvent(new Event('input', { bubbles: true }));

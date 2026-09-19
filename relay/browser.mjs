@@ -121,6 +121,11 @@ export async function startManagedBrowser({
     throw e;
   }
 
+  // Linux 上没有图形会话时（CI、纯命令行），有头模式起不来，自动退到无头
+  const noDisplay = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
+  const useHeadless = headless || noDisplay;
+  if (noDisplay) log('没有图形会话（DISPLAY 未设置），改用无头模式');
+
   const injectSource = String(collectorSource || '').replace(/__RELAY_PORT__/g, String(port));
   if (!injectSource) throw new Error('缺少采集器注入源码');
 
@@ -137,7 +142,7 @@ export async function startManagedBrowser({
     '--hide-crash-restore-bubble',
     '--disable-session-crashed-bubble',
   ];
-  if (headless) args.push('--headless=new', '--disable-gpu');
+  if (useHeadless) args.push('--headless=new', '--disable-gpu');
 
   log(`拉起浏览器：${picked.name}（独立配置目录，不影响你日常用的浏览器）`);
   const child = spawn(picked.path, args, { stdio: 'ignore', detached: false });
