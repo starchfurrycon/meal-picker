@@ -53,6 +53,9 @@ jobs:
       - name: 发行包端到端自检
         run: node scripts/e2e-dist.mjs
 
+      - name: 托管浏览器端到端自检
+        run: node scripts/e2e-browser.mjs
+
       - name: 收集发行文件
         run: |
           mkdir -p release
