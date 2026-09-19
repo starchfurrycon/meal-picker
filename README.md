@@ -177,6 +177,30 @@ Windows 上也可以双击 `relay/启动.cmd`。
 
 在线版保留下来是为了让人先看看界面长什么样；真要用来比价，请用前两种。
 
+### 下载与校验
+
+发行文件在 [Releases](https://github.com/starchfurrycon/meal-picker/releases)：
+
+| 文件 | 说明 |
+|---|---|
+| `meal-picker-2.0.0.zip` | 推荐：单文件版 + 目录版 + `relay/` + `collector/` + 插画源文件 |
+| `meal-picker-collector.user.js` | 采集器脚本（只想单独装它的话） |
+| `meal-picker.html` | 单文件版 |
+| `SHA256SUMS.txt` | 上面几个文件的校验和 |
+
+校验：
+
+```bash
+# macOS / Linux
+shasum -a 256 -c SHA256SUMS.txt
+
+# Windows
+Get-FileHash .\meal-picker.html -Algorithm SHA256
+```
+
+> 单文件版里嵌了构建时间戳，所以**你本地 `npm run build` 出来的哈希不会和发行版一样**。
+> 要核对请用发行版自己的 `SHA256SUMS.txt`。
+
 ---
 
 ## 开发
@@ -190,6 +214,9 @@ npm run e2e:llm        # LLM 分支端到端（本机假接口，不产生费用
 npm run e2e:dist       # 发行包自检
 npm run probe          # 实时数据可行性探测（只读）
 ```
+
+浏览器端到端自检需要 **Node 22+**（用全局 `WebSocket` 连 CDP）与本机 Chrome/Edge；
+缺任意一个会自动跳过而不是报错。
 
 全部自检都不使用任何真实 API Key，也不产生任何费用。
 
