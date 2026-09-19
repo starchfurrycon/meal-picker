@@ -4,9 +4,6 @@ node_modules/
 .tmp-svg/
 *.log
 
-# 构建输出里的临时/中间文件（dist/ 本身是要提交的，见下）
-dist/**/*.tmp
-
 # 本地预览与截图
 .preview-*.png
 .preview-*.html

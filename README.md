@@ -16,7 +16,8 @@
 
 **方式一：单文件（最省事）**
 
-下载 [`dist/meal-picker.html`](dist/meal-picker.html)，双击打开即可。不需要联网，不需要装任何东西。
+从 [Releases](https://github.com/starchfurrycon/meal-picker/releases/latest) 下载 `meal-picker.html`，
+双击打开即可。不需要联网，不需要装任何东西。
 
 **方式二：目录版**
 
@@ -29,6 +30,9 @@ npx serve web
 **方式三：在线版**
 
 <https://starchfurrycon.github.io/meal-picker/>
+
+> 仓库里的 `dist/` 是本地构建产物，仅供参考与直接取用；
+> **正式发行以 Releases 里的文件为准**（由 CI 在干净环境重建，附 SHA256 校验和）。
 
 ---
 
