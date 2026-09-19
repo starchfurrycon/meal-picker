@@ -28,20 +28,42 @@ node scripts/probe-realtime.mjs
 所以唯一可行的路径是：**在你自己的浏览器里、用你自己的登录态，读取页面自己请求回来的数据。**
 这既不是绕过风控（发起方就是真人真机），也不需要你把密码交给任何第三方。
 
+### 那"装两个东西"能不能省掉？
+
+能，**默认就是省掉的**。
+
+原来的流程是「装油猴 → 装采集器脚本 → 再打开工具」。现在改成：中继自己拉起一个浏览器实例，
+通过调试协议（CDP）把采集器直接注入到平台页面的 `document_start`。你只需要在那个窗口里登录一次平台。
+
+顺带说明一个坑：**扩展这条路走不通。** 一开始想的是让中继用 `--load-extension` 拉起一个
+"已经装好采集器扩展"的浏览器，实测在 Chrome 153 上被禁掉了（`--load-extension`、
+`--enable-unsafe-extension-debugging`、`--disable-features=DisableLoadExtensionCommandLineSwitch`
+全部无效；Edge 153 仍可用）。而 CDP 注入在所有 Chromium 系浏览器上都成立，所以走 CDP。
+
+复现方式：
+
+```bash
+node scripts/probe-extension.mjs   # 命令行加载扩展：Chrome ✘ / Edge ✔
+node scripts/probe-launch.mjs      # CDP 注入：Chrome ✔
+```
+
+如果你更想用自己的浏览器（书签、已登录状态都在里面），到
+「设置 → 数据来源 → 采集方式」里切成「用我自己的浏览器」，再按下面的步骤装一次油猴脚本即可。
+
 于是架构是：
 
 ```
-┌─────────────────────────────────────────────┐
-│  你的浏览器                                  │
-│                                             │
-│  http://127.0.0.1:8765/  ← 工具页面          │
-│         ↕ 同源，无跨域问题                    │
-│  本地中继（relay/server.mjs）                 │
-│         ↕ 采集器回传价格                      │
-│  采集器用户脚本（跑在平台页面上）              │
-│         ↕ 读取页面自己发出的搜索请求的响应      │
-│  美团 / 淘宝闪购 / 京东 / 饿了么               │
-└─────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│  中继自己拉起的浏览器（独立配置目录，不动你日常那个）      │
+│                                                       │
+│  http://127.0.0.1:8765/  ← 工具页面（你也可以用日常浏览器开）│
+│         ↕ 同源，无跨域问题                              │
+│  本地中继（relay/server.mjs）                          │
+│         ↕ 采集器回传价格                                │
+│  采集器（CDP 注入到平台页面，或油猴脚本）                 │
+│         ↕ 读取页面自己发出的搜索请求的响应                │
+│  美团 / 淘宝闪购 / 京东 / 饿了么                         │
+└───────────────────────────────────────────────────────┘
 ```
 
 工具页面必须由中继托管，因为线上是 https、中继是 http://127.0.0.1，
@@ -49,14 +71,14 @@ node scripts/probe-realtime.mjs
 
 ---
 
-## 三步装好
+## 两步用起来
 
 ### 1. 启动本地中继
 
-需要 Node 18+。**零依赖，不用 npm install。**
+需要 Node 18+（自检需要 Node 22+）。**零依赖，不用 npm install。**
 
 从 [Releases](https://github.com/starchfurrycon/meal-picker/releases) 下载
-`meal-picker-2.0.0.zip` 解压，然后：
+`meal-picker-2.1.0.zip` 解压，然后：
 
 ```bash
 node relay/server.mjs
@@ -74,26 +96,16 @@ Windows 上双击 `relay/启动.cmd` 更省事。
 
 它会自动打开 <http://127.0.0.1:8765/>，这就是工具页面。
 
-### 2. 装采集器脚本
+### 2. 在各平台登录一次
 
-浏览器装一个 **Tampermonkey**（油猴），然后打开：
+在工具页面输入一句话，点「开始筛选」。中继会自动拉起一个浏览器窗口，
+里面已经装好了采集器，并把各平台的搜索页打开。
 
-<http://127.0.0.1:8765/install>
+在那个窗口里用你自己的账号登录 **美团**、**淘宝闪购**、**京东**。
+登录态会留在这个独立配置目录（`data/browser-profile`）里，**之后不用反复登**。
 
-按页面提示点一下安装即可。装完工具栏会出现油猴图标。
-
-> 没有中继、只想单独装采集器？从 Releases 下载 `meal-picker-collector.user.js`，
-> 拖进油猴的「实用工具 → 安装」就行（默认连 `127.0.0.1:8765`）。
-
-### 3. 在各平台登录一次
-
-在浏览器里打开 **美团外卖**、**淘宝闪购**、**京东**，用你自己的账号登录。
-浏览器会记住登录状态，之后不用反复登。
-
-**然后就可以用了**：在工具页面输入一句话，工具会自动打开各平台的搜索页，
-采集器在那些页面上读价格并回传，读完自动关掉那些标签页。
-
-> 采集器不在线时工具不会瞎猜价格，会明确告诉你缺哪个平台、该做什么。
+> 这台机器上找不到 Chrome / Edge 时，工具会如实告诉你，并引导你改用油猴脚本那条路
+> （<http://127.0.0.1:8765/install>）。
 
 ---
 
@@ -183,8 +195,8 @@ Windows 上双击 `relay/启动.cmd` 更省事。
 
 | 方式 | 实时比价 | 说明 |
 |---|---|---|
-| **中继托管** `node relay/server.mjs` → `http://127.0.0.1:8765/` | ✅ | 推荐。功能完整 |
-| 单文件版 `dist/meal-picker.html` 双击打开 | ✅ | 也能连本地中继（需先启动中继 + 装采集器） |
+| **中继托管** `node relay/server.mjs` → `http://127.0.0.1:8765/` | ✅ | 推荐。零安装：中继自己拉起浏览器并注入采集器 |
+| 单文件版 `dist/meal-picker.html` 双击打开 | ✅ | 也能连本地中继（需先启动中继；采集方式选自动或油猴均可） |
 | 在线版 <https://starchfurrycon.github.io/meal-picker/> | ❌ | https 页面被浏览器禁止请求本地 http，只能浏览界面 |
 
 在线版保留下来是为了让人先看看界面长什么样；真要用来比价，请用前两种。
@@ -195,8 +207,8 @@ Windows 上双击 `relay/启动.cmd` 更省事。
 
 | 文件 | 说明 |
 |---|---|
-| `meal-picker-2.0.0.zip` | 推荐：单文件版 + 目录版 + `relay/` + `collector/` + 插画源文件 |
-| `meal-picker-collector.user.js` | 采集器脚本（只想单独装它的话） |
+| `meal-picker-2.1.0.zip` | 推荐：单文件版 + 目录版 + `relay/` + `collector/` + 插画源文件 |
+| `meal-picker-collector.user.js` | 采集器脚本（只在"用我自己的浏览器"模式下需要） |
 | `meal-picker.html` | 单文件版 |
 | `SHA256SUMS.txt` | 上面几个文件的校验和 |
 
@@ -219,18 +231,24 @@ Get-FileHash .\meal-picker.html -Algorithm SHA256
 
 ```bash
 npm start              # 启动中继（= node relay/server.mjs）
+npm run collector      # 由 collector-core.js 生成油猴脚本 + 注入版
 npm run build          # 打包到 dist/（单文件 + 目录版 + zip + 校验和）
 npm test               # 逻辑冒烟测试（含真实启动中继跑 API）
 npm run e2e            # 真实浏览器端到端（自动起中继 + 灌入假采集器数据）
 npm run e2e:llm        # LLM 分支端到端（本机假接口，不产生费用）
 npm run e2e:dist       # 发行包自检
+npm run e2e:browser    # 托管浏览器自检（真开浏览器，验证注入与前端接线）
+npm run diagnose URL   # 打开任意 URL 打印几何 / 令牌 / 报错，排查"页面看起来崩了"
 npm run probe          # 实时数据可行性探测（只读）
+npm run probe:ext      # 命令行加载扩展的可行性探测（只读）
+npm run probe:launch   # CDP 注入的可行性探测（只读）
 ```
 
 浏览器端到端自检需要 **Node 22+**（用全局 `WebSocket` 连 CDP）与本机 Chrome/Edge；
 缺任意一个会自动跳过而不是报错。
 
-全部自检都不使用任何真实 API Key，也不产生任何费用。
+全部自检都不使用任何真实 API Key，也不产生任何费用，也不会访问真实平台
+（`e2e:browser` 打开的是真实平台搜索页，但只检查采集器有没有被注入，不读数据）。
 
 ### 目录结构
 
@@ -240,16 +258,19 @@ web/                    工具本体（零构建，原生 ESM）
   styles/               设计令牌与全部样式
   js/
     app.js              主控：转写 → 采集 → 加权 → 出卡
-    realtime.js         实时采集编排（登记任务 / 轮询取价 / 超时处理）
+    realtime.js         实时采集编排（登记任务 / 拉浏览器 / 轮询取价 / 超时处理）
     adapters.js         数据源解析与外部记录规范化
     engine.js           八因子加权排名 + 无 LLM 的推荐理由
     taste.js            内置轻量语义转写
     llm.js              LLM 关键词转写（省 token 版）
     crypto.js           凭据保险箱
     store.js            设置 / 用量 / 凭据持久化
+    platform-urls.js    转出 relay/platform-urls.js（前后端共用同一份地址）
     views.js  ui.js  settings.js  art.js  catalog.js  util.js
 relay/
   server.mjs            本地中继（零依赖，只用 Node 内置模块）
+  browser.mjs           托管浏览器：拉起实例 + CDP 注入采集器
+  platform-urls.js      平台搜索页地址的唯一真源
   install.html          采集器安装引导页
   启动.cmd              Windows 双击启动
 collector/

@@ -6,6 +6,8 @@
  * 其中的 label 会出现在关键词里，price / packs 仅供口味匹配参考，不参与报价。
  */
 
+import { platformSearchUrl } from './platform-urls.js';
+
 /* ══════════════ 平台 ══════════════ */
 export const PLATFORMS = [
   {
@@ -20,8 +22,8 @@ export const PLATFORMS = [
       { key: 'account', label: '账号', placeholder: '手机号 / 京东账号（仅作备注）', type: 'text' },
     ],
     options: ['PLUS 会员'],
-    search: (kw) => `https://search.jd.com/Search?keyword=${encodeURIComponent(kw)}`,
-    order: (name) => `https://search.jd.com/Search?keyword=${encodeURIComponent(name)}`,
+    search: (kw) => platformSearchUrl('jd', kw),
+    order: (name) => platformSearchUrl('jd', name),
     shippingHint: '通常满 49 免运费',
   },
   {
@@ -36,8 +38,8 @@ export const PLATFORMS = [
       { key: 'account', label: '账号', placeholder: '手机号 / 美团账号（仅作备注）', type: 'text' },
     ],
     options: ['美团神会员', '开通外卖会员'],
-    search: (kw) => `https://waimai.meituan.com/search?keyword=${encodeURIComponent(kw)}`,
-    order: (name) => `https://waimai.meituan.com/search?keyword=${encodeURIComponent(name)}`,
+    search: (kw) => platformSearchUrl('meituan', kw),
+    order: (name) => platformSearchUrl('meituan', name),
     shippingHint: '配送费普遍 2–6 元',
   },
   {
@@ -52,8 +54,8 @@ export const PLATFORMS = [
       { key: 'account', label: '账号', placeholder: '手机号 / 淘宝账号（仅作备注）', type: 'text' },
     ],
     options: ['88VIP'],
-    search: (kw) => `https://s.taobao.com/search?q=${encodeURIComponent(kw)}`,
-    order: (name) => `https://s.taobao.com/search?q=${encodeURIComponent(name)}`,
+    search: (kw) => platformSearchUrl('taobao', kw),
+    order: (name) => platformSearchUrl('taobao', name),
     shippingHint: '闪购多含配送费，注意门槛',
   },
   {
@@ -68,8 +70,8 @@ export const PLATFORMS = [
       { key: 'account', label: '账号', placeholder: '手机号 / 饿了么账号（仅作备注）', type: 'text' },
     ],
     options: ['超级吃货卡'],
-    search: (kw) => `https://www.ele.me/search?keyword=${encodeURIComponent(kw)}`,
-    order: (name) => `https://www.ele.me/search?keyword=${encodeURIComponent(name)}`,
+    search: (kw) => platformSearchUrl('eleme', kw),
+    order: (name) => platformSearchUrl('eleme', name),
     shippingHint: '满减门槛较低',
   },
 ];
@@ -147,6 +149,9 @@ export const DEFAULT_SETTINGS = {
     relayPort: 8765,
     timeoutMs: 45000,
     openTabs: 'visible',     // visible | background
+    // auto   = 中继自己拉起浏览器并注入采集器（用户零安装）
+    // manual = 用户自己浏览器 + 油猴脚本
+    collectorMode: 'auto',
   },
   ui: {
     keepCredentials: true,

@@ -14,7 +14,7 @@ import { PLATFORMS, platformById } from './catalog.js';
 import { extractBuiltin, mergePrefs } from './taste.js';
 import { llmExtract } from './llm.js';
 import { searchCustomOnly, resolveSource, enabledPlatforms } from './adapters.js';
-import { probeRelay, collectRealtime, openCollectorTabs, searchUrlFor, relayBase } from './realtime.js';
+import { probeRelay, collectRealtime, openCollectorTabs, searchUrlFor, relayBase, startManagedBrowser, managedBrowserStatus, stopManagedBrowser } from './realtime.js';
 import { scoreCandidates, buildReasons, summarize } from './engine.js';
 import { $, el, sleep } from './util.js';
 import { showView, toast } from './ui.js';
@@ -100,6 +100,8 @@ function bindEvents() {
 function cancelRun() {
   runToken++;
   if (activeTabs) { activeTabs.closeAll(); activeTabs = null; }
+  // 托管模式：用户改主意了，把采集用的浏览器也收掉，别留一堆窗口
+  stopManagedBrowser(store.settings).catch(() => {});
   backHome();
 }
 
@@ -134,6 +136,8 @@ async function run(query) {
   const cfg = store.settings.dataSource || {};
   const customIds = enabled.filter((p) => resolveSource(cfg, p.id) === 'custom').map((p) => p.id);
   const liveIds = enabled.filter((p) => resolveSource(cfg, p.id) === 'realtime').map((p) => p.id);
+  // 采集方式：auto = 中继拉起托管浏览器（用户零安装）；manual = 油猴脚本 + 自己浏览器
+  const autoMode = liveIds.length > 0 && cfg.collectorMode !== 'manual';
 
   if (!customIds.length && !liveIds.length) {
     sendBtn.disabled = false;
@@ -221,8 +225,11 @@ async function run(query) {
 
   const keyword = (parsed.keywords && parsed.keywords[0]) || query;
 
-  /* 2. 打开平台页面（必须还在点击手势的调用栈里，否则会被拦） */
-  if (liveIds.length) {
+  /* 2. 打开平台页面
+     油猴模式必须还在点击手势的调用栈里，否则会被弹窗拦截；
+     托管模式由中继拉起浏览器，不受这个限制，放在任务登记之后更好
+     （采集器一上岗就能领到活，不用空轮询）。 */
+  if (liveIds.length && !autoMode) {
     think.step(1, { detail: `正在打开 ${liveIds.map((id) => platformById(id)?.name).join(' · ')}` });
     activeTabs = openCollectorTabs(liveIds, keyword, {
       background: cfg.openTabs === 'background',
@@ -230,6 +237,8 @@ async function run(query) {
     if (!activeTabs.count) {
       think.meta('浏览器拦住了新标签页，请允许弹出窗口后重试');
     }
+  } else if (liveIds.length) {
+    think.step(1, { detail: `正在为你打开 ${liveIds.map((id) => platformById(id)?.name).join(' · ')}` });
   } else {
     think.step(1, { detail: '使用你配置的接口' });
   }
@@ -239,6 +248,7 @@ async function run(query) {
   /* 3. 采集实时价格 */
   think.step(2, { detail: `正在读 ${liveIds.length} 个平台的实时价格` });
   let liveResult = { offers: [], notes: [], collected: {}, missing: [] };
+  let managedInfo = null;
   if (liveIds.length) {
     liveResult = await collectRealtime({
       keyword,
@@ -247,6 +257,15 @@ async function run(query) {
       isCancelled: () => token !== runToken,
       timeoutMs: Math.max(15000, Number(cfg.timeoutMs) || 45000),
       onProgress: (msg) => think.step(2, { detail: msg }),
+      onTaskReady: autoMode
+        ? async () => {
+            const r = await startManagedBrowser({ keyword, platforms: liveIds, settings: store.settings });
+            managedInfo = r;
+            if (!r.ok) {
+              think.meta(r.hint || `没能自动打开浏览器：${r.error}`);
+            }
+          }
+        : null,
     });
     if (token !== runToken) { think.cancel(); sendBtn.disabled = false; return; }
   }
@@ -418,7 +437,7 @@ globalThis.__mealPicker = {
   relayBase: () => relayBase(store.settings),
   probeRelay: () => probeRelay(store.settings),
   platformList: () => PLATFORMS.map((p) => p.id),
-  version: '2.0.1',
+  version: '2.1.0',
 };
 
 boot().catch((err) => {

@@ -7,6 +7,9 @@ node_modules/
 # 构建产物（发行版以 CI 在干净环境重建的 Release 文件为准）
 dist/
 
+# 托管浏览器的独立配置目录：里面是用户自己的登录态，绝不提交
+data/
+
 # 本地预览与截图
 .preview-*.png
 .preview-*.html

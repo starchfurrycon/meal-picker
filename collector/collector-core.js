@@ -1,26 +1,3 @@
-// ==UserScript==
-// @name         选餐 · 实时价格采集器
-// @namespace    https://github.com/starchfurrycon/meal-picker
-// @version      2.1.0
-// @description  在你自己的浏览器里、用你自己的登录态，采集各外卖平台搜索页的真实价格，回传给本地「选餐」工具做实时比价。不抓取、不代替登录、不绕过风控——只读取页面自己请求回来的数据。
-// @author       选餐
-// @match        *://*.meituan.com/*
-// @match        *://*.ele.me/*
-// @match        *://*.taobao.com/*
-// @match        *://*.tmall.com/*
-// @match        *://*.jd.com/*
-// @grant        GM_xmlhttpRequest
-// @grant        GM.xmlHttpRequest
-// @connect      127.0.0.1
-// @connect      localhost
-// @run-at       document-start
-// @noframes
-// ==/UserScript==
-
-/* eslint-disable no-console */
-// 这个文件由 scripts/build.mjs 生成：头部（本文件）+ collector/collector-core.js。
-// 要改采集逻辑请改 collector-core.js —— 中继注入版用的是同一份代码。
-
 /* ─────────────────────────────────────────────
    选餐 · 采集器核心（唯一真源）
    ─────────────────────────────────────────────
@@ -824,5 +801,3 @@ function __mealPickerCollectorCore() {
     });
   } catch { /* ignore */ }
 }
-
-__mealPickerCollectorCore();

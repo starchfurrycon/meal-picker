@@ -209,6 +209,27 @@ function renderPlatforms() {
   tabsSel.append(el('option', { value: 'background', selected: cfg.openTabs === 'background', text: '尽量在后台打开（不打扰，但可能被浏览器节流）' }));
   tabsSel.addEventListener('change', () => store.saveSettings({ dataSource: { openTabs: tabsSel.value } }));
 
+  // 采集方式：零安装（中继拉起浏览器）还是油猴脚本（用自己的浏览器）
+  const collectorSel = el('select', { class: 'select' });
+  collectorSel.append(el('option', {
+    value: 'auto',
+    selected: cfg.collectorMode !== 'manual',
+    text: '自动打开采集浏览器（推荐，什么都不用装）',
+  }));
+  collectorSel.append(el('option', {
+    value: 'manual',
+    selected: cfg.collectorMode === 'manual',
+    text: '用我自己的浏览器（需要先装油猴脚本）',
+  }));
+  collectorSel.addEventListener('change', () => {
+    store.saveSettings({ dataSource: { collectorMode: collectorSel.value } });
+    renderSheet();
+  });
+  const collectorHint = cfg.collectorMode === 'manual'
+    ? '在你自己浏览器的标签页里采集，需要先装一次油猴脚本。'
+    : '中继会自己拉起一个浏览器（独立配置目录，不动你日常用的浏览器），'
+      + '并自动装上采集器；你只需要在里面登录一次平台，之后登录态会留在那个目录里。';
+
   // 采集器状态：实时探测中继
   const statusRow = el('div', { class: 'relay-status' }, [
     el('span', { class: 'relay-status__dot is-checking' }),
@@ -274,8 +295,11 @@ function renderPlatforms() {
       el('div', { class: 'field__label', text: '实时采集' }),
       statusRow,
       actions,
+      field({ label: '采集方式', iconName: 'sparkle', control: collectorSel, hint: collectorHint }),
       field({ label: '中继端口', iconName: 'sliders', control: portInput, hint: '改了端口要同步改中继启动参数：node relay/server.mjs --port 端口' }),
-      field({ label: '采集时如何打开平台页面', iconName: 'external', control: tabsSel }),
+      cfg.collectorMode === 'manual'
+        ? field({ label: '采集时如何打开平台页面', iconName: 'external', control: tabsSel })
+        : null,
 
       el('div', { class: 'field__label', text: '自备接口（可选）' }),
       field({

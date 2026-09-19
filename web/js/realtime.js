@@ -53,6 +53,56 @@ export async function probeRelay(settings, { timeoutMs = 1800 } = {}) {
   }
 }
 
+/* ══════════════ 托管浏览器（零安装模式） ══════════════ */
+
+/**
+ * 让中继自己拉起一个浏览器并注入采集器，用户什么都不用装。
+ *
+ * 与「油猴模式」的区别：
+ *   · 油猴模式：在用户自己的浏览器里开标签页，靠用户装的脚本采集
+ *   · 托管模式：中继拉起独立配置的浏览器，CDP 注入采集器；用户只需登录一次
+ *
+ * @returns {Promise<{ok:boolean, browser?:string, opened?:number, error?:string, hint?:string}>}
+ */
+export async function startManagedBrowser({ keyword, platforms, settings }) {
+  const base = relayBase(settings);
+  try {
+    const res = await fetch(`${base}/api/browser/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword, platforms }),
+    });
+    const j = await res.json();
+    return j;
+  } catch (err) {
+    return { ok: false, error: `连不上本地中继：${err?.message || err}` };
+  }
+}
+
+/** 托管浏览器当前状态（顺带用来判断"零安装模式"可不可用） */
+export async function managedBrowserStatus(settings, { timeoutMs = 1500 } = {}) {
+  const base = relayBase(settings);
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(`${base}/api/browser`, { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+    if (timer) clearTimeout(timer);
+    if (!res.ok) return { ok: false };
+    return await res.json();
+  } catch {
+    if (timer) clearTimeout(timer);
+    return { ok: false };
+  }
+}
+
+/** 关掉托管浏览器（用户点"我改主意了"或重新采一次时用） */
+export async function stopManagedBrowser(settings) {
+  const base = relayBase(settings);
+  try {
+    await fetch(`${base}/api/browser/stop`, { method: 'POST' });
+  } catch { /* 中继没了就算了 */ }
+}
+
 /* ══════════════ 采集 ══════════════ */
 
 /** 某个平台该打开哪个搜索页 */
@@ -94,6 +144,9 @@ export function openCollectorTabs(platformIds, keyword, { background = false } =
  * @param {object} o.settings
  * @param {(msg:string, pct:number)=>void} [o.onProgress]
  * @param {()=>boolean} [o.isCancelled]
+ * @param {(ctx:{keyword:string,platforms:string[],urls:object})=>Promise<void>} [o.onTaskReady]
+ *        任务登记完成后立刻回调。托管浏览器模式在这里拉起浏览器并打开平台页，
+ *        这样采集器一上岗就能领到任务，不会空轮询。
  * @returns {Promise<{offers:Array, notes:Array, collected:object, missing:string[]}>}
  */
 export async function collectRealtime({
@@ -103,6 +156,7 @@ export async function collectRealtime({
   onProgress = () => {},
   isCancelled = () => false,
   timeoutMs = 45000,
+  onTaskReady = null,
 }) {
   const base = relayBase(settings);
   const notes = [];
@@ -134,6 +188,20 @@ export async function collectRealtime({
   }
 
   onProgress(`已登记本轮比价，等待 ${platforms.length} 个平台回传实时价格`, 8);
+
+  /* 1b. 托管浏览器模式：现在才把平台页打开，采集器一上岗就能领到任务 */
+  if (typeof onTaskReady === 'function') {
+    try {
+      await onTaskReady({
+        keyword,
+        platforms,
+        urls: Object.fromEntries(platforms.map((id) => [id, searchUrlFor(id, keyword)])),
+      });
+    } catch { /* 打开失败由各自的兜底逻辑报出来 */ }
+    if (isCancelled()) {
+      return { offers, notes, collected: {}, missing: platforms, cancelled: true };
+    }
+  }
 
   /* 2. 轮询取价 */
   const collected = {};

@@ -68,8 +68,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>装一次，之后就不用管了</h1>
-  <p class="sub">采集器跑在你自己的浏览器里，用你自己的登录态读各平台真实价格。它不会代替你登录，也不会绕过任何风控。</p>
+  <h1>其实你什么都不用装</h1>
+  <p class="sub">选餐默认让中继自己拉起一个浏览器，并把采集器直接注入进去。你只需要在那个窗口里登录一次平台。</p>
 
   <div class="status" id="status">
     <span class="dot" id="dot"></span>
@@ -77,33 +77,38 @@
   </div>
 
   <div class="card">
-    <h2><span class="num">1</span>装一个用户脚本管理器</h2>
-    <p style="margin:0 0 8px">推荐 <b>Tampermonkey</b>（油猴），四大浏览器都有。已经装过就跳过。</p>
-    <a class="btn btn--ghost" href="https://www.tampermonkey.net/" target="_blank" rel="noopener">前往 Tampermonkey 官网</a>
-    <p class="tip">装完浏览器工具栏上会出现一个黑色小图标。</p>
+    <h2><span class="num">1</span>直接打开选餐</h2>
+    <p style="margin:0 0 10px">点「开始筛选」时，中继会自动打开一个浏览器窗口，里面已经装好了采集器。</p>
+    <a class="btn" href="/">打开选餐</a>
+    <p class="tip">这个浏览器用的是独立配置目录（项目里的 <code>data/browser-profile</code>），
+      不碰你日常用的浏览器，也不动你的书签和密码。</p>
   </div>
 
   <div class="card">
-    <h2><span class="num">2</span>安装选餐采集器</h2>
-    <p style="margin:0 0 10px">点下面的按钮，油猴会弹出安装页面，确认即可。</p>
-    <a class="btn" id="install-link" href="/collector.user.js">安装采集器脚本</a>
-    <p class="tip">如果点击后是纯文本页面，把地址复制到油猴的「添加新脚本」里，或直接在该页面上点油猴图标的「安装」。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">3</span>在各平台登录一次</h2>
+    <h2><span class="num">2</span>在那个窗口里登录一次平台</h2>
     <ul>
-      <li>在浏览器里打开 <b>美团外卖</b>、<b>淘宝闪购</b>、<b>京东</b>，用你自己的账号登录</li>
-      <li>登录状态浏览器会自己记住，之后不用反复登</li>
-      <li>没登录也能采到一部分，但价格、会员价和券会不准</li>
+      <li>在自动打开的平台页面上，用你自己的账号登录 <b>美团</b>、<b>淘宝闪购</b>、<b>京东</b></li>
+      <li>登录态会留在这个独立目录里，<b>之后不用反复登</b></li>
+      <li>没登录也能采到一部分，但会员价和券会不准</li>
     </ul>
   </div>
 
   <div class="card">
-    <h2><span class="num">4</span>回到选餐开始比价</h2>
-    <p style="margin:0 0 10px">之后每次比价，工具会自动打开各平台的搜索页，采集器在那些页面上读价格并回传。</p>
-    <a class="btn btn--ghost" href="/">打开选餐</a>
-    <p class="tip">采集完那些标签页会自动关掉。如果浏览器拦了弹出窗口，允许一次就行。</p>
+    <h2><span class="num">3</span>以后每次都是实时价</h2>
+    <p style="margin:0">每轮比价都会重新打开平台页、重新读一次价格，中继在每轮开始时清空上一轮数据，
+      不复用任何缓存价格。采到的价格只存在内存里。</p>
+  </div>
+
+  <div class="card" id="manual-card">
+    <h2>想用自己的浏览器？装一次油猴脚本也行</h2>
+    <p style="margin:0 0 8px">到「设置 → 数据来源 → 采集方式」里选「用我自己的浏览器」，
+      然后按下面两步装一次。装过就跳过。</p>
+    <ol>
+      <li>装 <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a>（油猴），四大浏览器都有</li>
+      <li>点下面的按钮安装选餐采集器，油猴会弹出安装页面，确认即可</li>
+    </ol>
+    <a class="btn btn--ghost" id="install-link" href="/collector.user.js">安装采集器脚本</a>
+    <p class="tip">如果点击后是纯文本页面，把地址复制到油猴的「添加新脚本」里，或直接在该页面上点油猴图标的「安装」。</p>
   </div>
 
   <div class="card warn">
@@ -113,6 +118,7 @@
       <li>认不出接口时，退一步读取页面上<b>已经渲染出来</b>的价格文字</li>
       <li>把读到的价格 POST 到本机中继 <code id="relay-url">http://127.0.0.1:8765</code>，只存内存，每轮比价开始时清空</li>
       <li>不上传任何数据到互联网，不碰你的账号密码，不改动页面上的任何内容</li>
+      <li>自动模式下的浏览器由中继通过调试端口（只监听本机）注入采集器，中继退出时一起关闭</li>
     </ul>
     <p class="tip">各平台页面结构随时会变。认不出数据时采集器不会瞎猜，只会如实报告"没读到"。</p>
   </div>
@@ -129,7 +135,7 @@
       const j = await r.json();
       dot.className = 'dot ok';
       if (j.collectorSeen == null) {
-        text.textContent = '中继已连接。采集器还没出现过 —— 装完脚本后打开一次美团或淘宝，这里就会变成"活跃"。';
+        text.textContent = '中继已连接。采集器还没出现过 —— 打开选餐点一次「开始筛选」就会自动就位。';
       } else {
         const s = Math.max(1, Math.round(j.collectorSeen / 1000));
         text.textContent = `中继已连接，采集器 ${s} 秒前还活跃着 —— 一切就绪。`;
@@ -138,6 +144,16 @@
       dot.className = 'dot off';
       text.textContent = '中继没响应。请先启动它：node relay/server.mjs';
     }
+    // 这台机器上有没有可用的 Chromium 系浏览器，决定自动模式能不能用
+    try {
+      const b = await (await fetch('/api/browser', { cache: 'no-store' })).json();
+      if (!b.available) {
+        const card = document.getElementById('manual-card');
+        card.classList.add('warn');
+        card.querySelector('h2').textContent = '这台机器上没找到 Chrome / Edge，请用油猴脚本这条路';
+        card.scrollIntoView({ block: 'center' });
+      }
+    } catch { /* 中继没起来就算了 */ }
   })();
 </script>
 </body>

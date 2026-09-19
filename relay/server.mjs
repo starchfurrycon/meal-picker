@@ -25,6 +25,8 @@ import { join, dirname, extname, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { findBrowser, startManagedBrowser, readCollectorSource } from './browser.mjs';
+import { platformSearchUrl, PLATFORM_SEARCH } from './platform-urls.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -75,6 +77,11 @@ const debugSamples = [];
 
 let lastActivity = Date.now();
 const touch = () => { lastActivity = Date.now(); };
+
+/** 托管浏览器实例（按需拉起，用同一个独立 profile 保留登录态） */
+let managed = null;
+/** 自检模式下的"拉起浏览器"调用记录（MEALPICKER_BROWSER_SPY=1） */
+const browserSpy = [];
 
 /* ══════════ 工具函数 ══════════ */
 const CORS = {
@@ -147,7 +154,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         app: 'meal-picker-relay',
-        version: '2.0.1',
+        version: '2.1.0',
         collectorSeen: collectorSeenAt ? Date.now() - collectorSeenAt : null,
         collector: collectorInfo,
         task: taskProgress(),
@@ -246,18 +253,95 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true, samples: debugSamples });
     }
 
+    /* ── 托管浏览器：让用户不必装油猴 ── */
+
+    // 状态：托管浏览器在不在、用的哪个
+    if (path === '/api/browser' && req.method === 'GET') {
+      return json(res, 200, {
+        ok: true,
+        running: !!managed && managed.alive,
+        browser: managed ? managed.browser : null,
+        available: findBrowser()?.name || null,
+        debugPort: managed ? managed.debugPort : null,
+        spy: process.env.MEALPICKER_BROWSER_SPY ? browserSpy : undefined,
+      });
+    }
+
+    // 拉起托管浏览器并打开各平台搜索页（采集器会自动注入）
+    if (path === '/api/browser/start' && req.method === 'POST') {
+      const body = await readBody(req);
+      const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter((p) => PLATFORM_SEARCH[p]);
+      const keyword = String(body.keyword || '').trim();
+      if (!platforms.length || !keyword) {
+        return json(res, 400, { ok: false, error: '需要 platforms 与 keyword' });
+      }
+      // 自检用：只记一笔，不真开浏览器（scripts/e2e-browser.mjs 用它验证前端接线）
+      if (process.env.MEALPICKER_BROWSER_SPY) {
+        browserSpy.push({ platforms, keyword, at: Date.now() });
+        return json(res, 200, { ok: true, spy: true, browser: 'spy', opened: platforms.length, targets: platforms.length });
+      }
+      const urls = platforms.map((id) => ({ id, url: platformSearchUrl(id, keyword) })).filter((x) => x.url);
+      try {
+        if (!managed || !managed.alive) {
+          managed = await startManagedBrowser({
+            profileDir: join(root, 'data', 'browser-profile'),
+            port: PORT,
+            collectorSource: readCollectorSource(join(root, 'collector')),
+            log: (m) => { if (!QUIET) console.log('  [浏览器] ' + m); },
+          });
+        }
+        const ids = await managed.open(urls.map((u) => u.url));
+        return json(res, 200, {
+          ok: true,
+          browser: managed.browser,
+          opened: urls.length,
+          targets: ids.length,
+          urls: urls.map((u) => u.url),
+        });
+      } catch (err) {
+        const hint = err.code === 'NO_BROWSER'
+          ? '没找到 Chrome / Edge / Chromium。可以改用油猴采集器：' + `http://${HOST}:${PORT}/install`
+          : (err.code === 'NO_CDP' ? '浏览器起来了但调试端口没响应，可能被安全软件拦了。' : '');
+        return json(res, 200, { ok: false, error: err.message, hint, code: err.code || null });
+      }
+    }
+
+    // 关掉托管浏览器
+    if (path === '/api/browser/stop' && req.method === 'POST') {
+      if (managed) {
+        try { await managed.stop(); } catch { /* ignore */ }
+        managed = null;
+      }
+      return json(res, 200, { ok: true, running: false });
+    }
+
     // 采集器脚本
     if (path === '/collector.user.js') {
       const p = join(root, 'collector', 'meal-picker-collector.user.js');
       if (!existsSync(p)) return json(res, 404, { ok: false, error: '找不到采集器脚本' });
       const src = readFileSync(p, 'utf8')
-        .replace('__RELAY_PORT__', String(PORT));
+        .replace(/__RELAY_PORT__/g, String(PORT));
       res.writeHead(200, {
         ...CORS,
         'Content-Type': 'text/javascript; charset=utf-8',
         'Cache-Control': 'no-store',
       });
       res.end(src);
+      return;
+    }
+
+    // 平台搜索页地址的唯一真源在 relay/ 下（中继和前端共用）。
+    // 前端的 web/js/platform-urls.js 会转出这个文件，所以这里要把它托管出来，
+    // 否则浏览器里 import 会因为 /relay/... 不在 web/ 目录而 404。
+    if (path === '/relay/platform-urls.js') {
+      const p = join(here, 'platform-urls.js');
+      if (!existsSync(p)) return json(res, 404, { ok: false, error: '找不到 platform-urls.js' });
+      res.writeHead(200, {
+        ...CORS,
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(readFileSync(p, 'utf8'));
       return;
     }
 
@@ -345,20 +429,28 @@ function openBrowser(url) {
 
 /* 空闲自动退出 */
 if (!KEEP_ALIVE) {
-  const timer = setInterval(() => {
+  const timer = setInterval(async () => {
     if (Date.now() - lastActivity > IDLE_MS) {
       console.log('\n  空闲超时，中继自动退出。\n');
-      server.close(() => process.exit(0));
-      setTimeout(() => process.exit(0), 1500);
+      await shutdown();
     }
   }, 60_000);
   timer.unref();
 }
 
+/** 退出前把托管浏览器一起收掉，别留孤儿进程 */
+async function shutdown() {
+  if (managed) {
+    try { await managed.stop(); } catch { /* ignore */ }
+    managed = null;
+  }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1500);
+}
+
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     console.log('\n  已停止。\n');
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 800);
+    shutdown();
   });
 }
