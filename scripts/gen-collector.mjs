@@ -41,4 +41,20 @@ writeFileSync(join(collectorDir, 'collector-inject.js'), inject, 'utf8');
 const userscript = `${header.trimEnd()}\n\n${core.trim()}\n\n__mealPickerCollectorCore();\n`;
 writeFileSync(join(collectorDir, 'meal-picker-collector.user.js'), userscript, 'utf8');
 
+/* ── 平台搜索页地址：真源在 relay/，同步一份给前端 ──
+   Pages 上只发布 web/，前端 import 一个 /relay/ 下的文件会 404；
+   而让中继额外托管 /relay/... 又只在"中继托管页面"这一种打开方式下成立。
+   所以这里直接把真源原样复制到 web/js/，两边永远是同一份内容。 */
+const urlsSrc = readFileSync(join(root, 'relay', 'platform-urls.js'), 'utf8');
+const banner = [
+  '/* ─────────────────────────────────────────────',
+  '   由 scripts/gen-collector.mjs 从 relay/platform-urls.js 复制而来。',
+  '   不要直接改这个文件 —— 改 relay/platform-urls.js 再跑 npm run collector。',
+  '   之所以复制而不是 import：线上 Pages 只发布 web/，指向 relay/ 的 import 会 404。',
+  '   ───────────────────────────────────────────── */',
+  '',
+].join('\n');
+writeFileSync(join(root, 'web', 'js', 'platform-urls.js'), banner + urlsSrc, 'utf8');
+
 console.log(`✔ 采集器已生成：userscript ${(userscript.length / 1024).toFixed(1)} KB，注入版 ${(inject.length / 1024).toFixed(1)} KB`);
+console.log(`✔ 平台地址已同步到 web/js/platform-urls.js（${(urlsSrc.length / 1024).toFixed(1)} KB）`);
