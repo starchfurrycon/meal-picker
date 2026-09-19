@@ -16,7 +16,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const pageUrl = pathToFileURL(join(root, 'web', 'index.html')).href;
+// 默认测本地源码；设 MEALPICKER_URL 可以改测线上（例如 GitHub Pages）
+const pageUrl = process.env.MEALPICKER_URL
+  || pathToFileURL(join(root, 'web', 'index.html')).href;
 
 const BROWSERS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
