@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         选餐 · 实时价格采集器
 // @namespace    https://github.com/starchfurrycon/meal-picker
-// @version      2.0.0
+// @version      2.0.1
 // @description  在你自己的浏览器里、用你自己的登录态，采集各外卖平台搜索页的真实价格，回传给本地「选餐」工具做实时比价。不抓取、不代替登录、不绕过风控——只读取页面自己请求回来的数据。
 // @author       选餐
 // @match        *://*.meituan.com/*
@@ -27,7 +27,7 @@
 
   const RELAY_PORT = __RELAY_PORT__;
   const RELAY = `http://127.0.0.1:${RELAY_PORT}`;
-  const VERSION = '2.0.0';
+  const VERSION = '2.0.1';
   const LOG = (...a) => console.log('%c[选餐采集]', 'color:#FF8A3D;font-weight:700', ...a);
 
   /** 当前平台判定 */

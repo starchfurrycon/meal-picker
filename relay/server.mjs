@@ -147,7 +147,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         app: 'meal-picker-relay',
-        version: '2.0.0',
+        version: '2.0.1',
         collectorSeen: collectorSeenAt ? Date.now() - collectorSeenAt : null,
         collector: collectorInfo,
         task: taskProgress(),
