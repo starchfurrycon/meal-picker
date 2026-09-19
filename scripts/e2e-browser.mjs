@@ -157,7 +157,7 @@ const fakePort = fake.address().port;
 
 const PORT = 21000 + Math.floor(Math.random() * 500);
 const relay = spawn(process.execPath, [join(root, 'relay', 'server.mjs'), '--port', String(PORT), '--quiet', '--no-open'], {
-  stdio: 'ignore', cwd: root,
+  stdio: 'ignore', cwd: root, env: { ...process.env, MEALPICKER_DEBUG: '1' },
 });
 
 /* 另一个中继实例，开着"拉起浏览器"的探针：用来验证前端在自动模式下
@@ -258,6 +258,80 @@ try {
     ws.close();
     assert(hasCore === 'function', `页面里没有注入 __mealPickerCollectorCore（实际 ${hasCore}）`);
     assert(mainWorld === true, '主世界标记没设上，嗅探钩子会装到隔离世界去');
+  });
+
+  await check('回传通道（CDP binding）真的挂在页面上了', async () => {
+    // 这条是"零安装"的命门：平台页是 https，中继是 http://127.0.0.1，
+    // 页面里的 fetch 会被 Chrome 的 Private Network Access 直接拒掉
+    // （Permission was denied for this request to access the `loopback` address）。
+    // 所以价格只能靠 CDP binding 回传。binding 一旦没挂上，
+    // 采集器会误判成"中继没在跑"，整条链路静默失效 —— 而且表面上一切正常。
+    const st = await (await fetch(`http://127.0.0.1:${PORT}/api/browser`)).json();
+    assert(st.binding && st.binding.ok > 0, `中继没成功挂上 binding：${JSON.stringify(st.binding)}`);
+    assert(!st.binding.fail, `binding 挂载报错：${st.binding.fail}`);
+
+    const list = await (await fetch(`http://127.0.0.1:${managedDbgPort}/json/list`)).json();
+    const target = list.find((t) => t.type === 'page' && /meituan\.com|ele\.me/.test(t.url));
+    assert(target, '找不到平台页');
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((res, rej) => {
+      ws.addEventListener('open', res, { once: true });
+      ws.addEventListener('error', () => rej(new Error('连不上页面调试端口')), { once: true });
+    });
+    let seq = 0;
+    const pending = new Map();
+    ws.addEventListener('message', (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+    });
+    const send = (method, params = {}) => new Promise((res) => {
+      const id = ++seq;
+      pending.set(id, res);
+      ws.send(JSON.stringify({ id, method, params }));
+      setTimeout(() => { if (pending.has(id)) { pending.delete(id); res({ result: {} }); } }, 8000);
+    });
+    const evalJs = async (expr) => {
+      const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true });
+      return r.result?.result?.value;
+    };
+    const type = await evalJs('typeof window.__mealPickerRelay');
+    ws.close();
+    assert(type === 'function', `页面里没有 __mealPickerRelay（实际 ${type}）`);
+  });
+
+  await check('这一轮的搜索任务被写进了注入脚本（不然采集器空等）', async () => {
+    // Target.createTarget 会先触发 targetCreated，那一刻注入就发生了。
+    // 如果任务没在 createTarget 之前设好，先挂上的脚本里没有任务，
+    // 采集器就会一直等一个永远不来的活。
+    const st = await (await fetch(`http://127.0.0.1:${PORT}/api/browser`)).json();
+    assert(st.debug, '没有诊断信息（需要 MEALPICKER_DEBUG=1）');
+    assert(st.debug.taskMatched, `任务没匹配上：${JSON.stringify(st.debug)}`);
+    assert(st.debug.task && st.debug.task.keyword === '酸菜鱼', `任务关键词不对：${JSON.stringify(st.debug.task)}`);
+
+    const list = await (await fetch(`http://127.0.0.1:${managedDbgPort}/json/list`)).json();
+    const target = list.find((t) => t.type === 'page' && /meituan\.com|ele\.me/.test(t.url));
+    assert(target, '找不到平台页');
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((res, rej) => {
+      ws.addEventListener('open', res, { once: true });
+      ws.addEventListener('error', () => rej(new Error('连不上页面调试端口')), { once: true });
+    });
+    let seq = 0;
+    const pending = new Map();
+    ws.addEventListener('message', (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+    });
+    const send = (method, params = {}) => new Promise((res) => {
+      const id = ++seq;
+      pending.set(id, res);
+      ws.send(JSON.stringify({ id, method, params }));
+      setTimeout(() => { if (pending.has(id)) { pending.delete(id); res({ result: {} }); } }, 8000);
+    });
+    const r = await send('Runtime.evaluate', { expression: 'JSON.stringify(window.__mealPickerTask)', returnByValue: true });
+    ws.close();
+    const baked = JSON.parse(r.result?.result?.value ?? 'null');
+    assert(baked && baked.keyword === '酸菜鱼', `注入的任务不对：${JSON.stringify(baked)}`);
   });
 
   await check('/api/browser/stop 能收干净', async () => {

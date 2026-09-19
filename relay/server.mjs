@@ -82,9 +82,10 @@ const touch = () => { lastActivity = Date.now(); };
 let managed = null;
 /** 自检模式下的"拉起浏览器"调用记录（MEALPICKER_BROWSER_SPY=1） */
 const browserSpy = [];
+/** 诊断用：最近一次拉起托管浏览器的细节（MEALPICKER_DEBUG=1） */
+let lastBrowserDebug = null;
 
-/* ══════════ 工具函数 ══════════ */
-const CORS = {
+/* ══════════ 工具函数 ══════════ */const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -102,8 +103,58 @@ function json(res, code, obj) {
   res.end(body);
 }
 
-function readBody(req, limit = 4 * 1024 * 1024) {
-  return new Promise((resolve, reject) => {
+/**
+ * 把一份采集结果并进本轮价格表。
+ *
+ * 两条来路共用这里：
+ *   · POST /api/prices        —— 油猴脚本（GM_xmlhttpRequest）或本地 http 页面
+ *   · CDP binding 回调        —— 托管浏览器里的页面（https，fetch 会被 PNA 拦）
+ *
+ * 返回 { status, body }，调用方直接当 HTTP 响应发出去。
+ */
+function ingestPrices(body) {
+  if (!body || typeof body !== 'object') return { status: 400, body: { ok: false, error: '空请求' } };
+
+  // 托管模式下的 hello 走的是同一个通道，分开处理
+  if (body.kind === 'hello') {
+    collectorSeenAt = Date.now();
+    collectorInfo = {
+      version: body.version || '?',
+      ua: String(body.ua || '').slice(0, 120),
+      platforms: body.platforms || [],
+    };
+    return { status: 200, body: { ok: true, task: taskProgress() } };
+  }
+
+  collectorSeenAt = Date.now();
+  const platform = String(body.platform || '');
+  const offers = Array.isArray(body.offers) ? body.offers : [];
+  if (!platform) return { status: 400, body: { ok: false, error: '缺少 platform' } };
+
+  // 只接受当前任务里点名的平台，避免页面乱逛时灌进来无关数据
+  if (task && !task.platforms.includes(platform)) {
+    return { status: 200, body: { ok: true, ignored: true, reason: '不在本轮任务内' } };
+  }
+
+  priceStore.set(platform, {
+    platform,
+    offers,
+    keyword: body.keyword || task?.keyword || '',
+    page: body.page || '',
+    at: Date.now(),
+    count: offers.length,
+    warnings: body.warnings || [],
+  });
+
+  if (body.debug) {
+    debugSamples.push({ platform, at: Date.now(), sample: body.debug });
+    while (debugSamples.length > 12) debugSamples.shift();
+  }
+
+  return { status: 200, body: { ok: true, progress: taskProgress() } };
+}
+
+function readBody(req, limit = 4 * 1024 * 1024) {  return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
@@ -154,7 +205,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         app: 'meal-picker-relay',
-        version: '2.1.0',
+        version: '2.1.1',
         collectorSeen: collectorSeenAt ? Date.now() - collectorSeenAt : null,
         collector: collectorInfo,
         task: taskProgress(),
@@ -209,32 +260,8 @@ const server = createServer(async (req, res) => {
     // 采集器回传价格
     if (path === '/api/prices' && req.method === 'POST') {
       const body = await readBody(req);
-      collectorSeenAt = Date.now();
-      const platform = String(body.platform || '');
-      const offers = Array.isArray(body.offers) ? body.offers : [];
-      if (!platform) return json(res, 400, { ok: false, error: '缺少 platform' });
-
-      // 只接受当前任务里点名的平台，避免页面乱逛时灌进来无关数据
-      if (task && !task.platforms.includes(platform)) {
-        return json(res, 200, { ok: true, ignored: true, reason: '不在本轮任务内' });
-      }
-
-      priceStore.set(platform, {
-        platform,
-        offers,
-        keyword: body.keyword || task?.keyword || '',
-        page: body.page || '',
-        at: Date.now(),
-        count: offers.length,
-        warnings: body.warnings || [],
-      });
-
-      if (body.debug) {
-        debugSamples.push({ platform, at: Date.now(), sample: body.debug });
-        while (debugSamples.length > 12) debugSamples.shift();
-      }
-
-      return json(res, 200, { ok: true, progress: taskProgress() });
+      const r = ingestPrices(body);
+      return json(res, r.status, r.body);
     }
 
     // 工具页面：读取已采到的价格
@@ -263,7 +290,9 @@ const server = createServer(async (req, res) => {
         browser: managed ? managed.browser : null,
         available: findBrowser()?.name || null,
         debugPort: managed ? managed.debugPort : null,
+        binding: managed ? managed.binding : null,
         spy: process.env.MEALPICKER_BROWSER_SPY ? browserSpy : undefined,
+        debug: process.env.MEALPICKER_DEBUG ? lastBrowserDebug : undefined,
       });
     }
 
@@ -281,6 +310,23 @@ const server = createServer(async (req, res) => {
         return json(res, 200, { ok: true, spy: true, browser: 'spy', opened: platforms.length, targets: platforms.length });
       }
       const urls = platforms.map((id) => ({ id, url: platformSearchUrl(id, keyword) })).filter((x) => x.url);
+      // 这一轮的任务：注入时一起带进页面，页面就不用回头来拉（拉也拉不动，见下）。
+      // 工具页面正常会先 POST /api/collect 再调这里；但要是有人直接调这个接口
+      // （自检、命令行），也得能跑，所以没有匹配的任务就现场登记一个。
+      let thisTask = task && task.keyword === keyword ? task : null;
+      if (!thisTask) {
+        priceStore = new Map();
+        debugSamples.length = 0;
+        task = {
+          id: randomUUID(),
+          keyword,
+          platforms,
+          urls: {},
+          startedAt: Date.now(),
+          timeoutMs: Number(body.timeoutMs) || 45000,
+        };
+        thisTask = task;
+      }
       try {
         if (!managed || !managed.alive) {
           managed = await startManagedBrowser({
@@ -288,9 +334,26 @@ const server = createServer(async (req, res) => {
             port: PORT,
             collectorSource: readCollectorSource(join(root, 'collector')),
             log: (m) => { if (!QUIET) console.log('  [浏览器] ' + m); },
+            // 采集器回传走 CDP 通道，直接并进价格表。
+            // 平台页是 https、中继是 http://127.0.0.1，页面里的 fetch 会被
+            // Private Network Access 拦掉，所以只能走这条路。
+            onCollect: (payload) => {
+              const r = ingestPrices(payload);
+              if (!QUIET && r.body && r.body.ok && !r.body.ignored) {
+                console.log(`  [采集] ${payload.platform} 回传 ${(payload.offers || []).length} 条`);
+              }
+            },
           });
         }
-        const ids = await managed.open(urls.map((u) => u.url));
+        const ids = await managed.open(urls.map((u) => u.url), { task: thisTask });
+        lastBrowserDebug = {
+          task: thisTask ? { keyword: thisTask.keyword, platforms: thisTask.platforms } : null,
+          taskMatched: !!thisTask,
+          globalTaskKeyword: task ? task.keyword : null,
+          binding: managed.binding,
+          targets: ids.length,
+          pages: await managed.openPages(),
+        };
         return json(res, 200, {
           ok: true,
           browser: managed.browser,

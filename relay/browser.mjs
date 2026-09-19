@@ -18,6 +18,21 @@
    · 用独立 profile 目录（data/browser-profile），不碰用户的日常浏览器数据
    · CDP 端口只监听 127.0.0.1，且只在本次运行期间开放
    · 采集器只读页面自己请求回来的数据，不抓取、不代替登录、不绕风控
+
+   ── 为什么价格不通过 fetch 回传 ──
+
+   平台页是 https，中继是 http://127.0.0.1，实测在真实平台页上：
+
+     Access to fetch at 'http://127.0.0.1:PORT/api/health' from origin
+     'https://waimai.meituan.com' has been blocked by CORS policy:
+     Permission was denied for this request to access the `loopback` address
+
+   这是 Chrome 的 Private Network Access：https 公网页面默认不允许访问回环地址，
+   采集器就算读到了价格也发不出来。所以托管模式改用 CDP 的 Runtime.addBinding ——
+   页面调用一个由调试器注入的函数，数据走 DevTools 通道回到中继，
+   完全不经过网络栈，因此不受 CORS / PNA / 混合内容 / 页面 CSP 的任何限制。
+
+   复现：node scripts/probe-relay-from-platform.mjs
    ───────────────────────────────────────────── */
 
 import { spawn } from 'node:child_process';
@@ -48,6 +63,9 @@ export function findBrowser() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 采集器通过它把价格交回中继（CDP binding 名，采集器源码里也用同一个常量） */
+export const BINDING_NAME = '__mealPickerRelay';
 
 /* ── 极简 CDP 客户端：浏览器级连接 + flatten 会话 ── */
 class Cdp {
@@ -113,6 +131,8 @@ export async function startManagedBrowser({
   log = () => {},
   collectorSource,
   headless = false,
+  /** 采集器通过 CDP binding 回传数据时的回调：(payload, meta) => void */
+  onCollect = null,
 } = {}) {
   const picked = findBrowser();
   if (!picked) {
@@ -126,8 +146,27 @@ export async function startManagedBrowser({
   const useHeadless = headless || noDisplay;
   if (noDisplay) log('没有图形会话（DISPLAY 未设置），改用无头模式');
 
-  const injectSource = String(collectorSource || '').replace(/__RELAY_PORT__/g, String(port));
-  if (!injectSource) throw new Error('缺少采集器注入源码');
+  const baseSource = String(collectorSource || '').replace(/__RELAY_PORT__/g, String(port));
+  if (!baseSource) throw new Error('缺少采集器注入源码');
+
+  /**
+   * 每个页面注入时都把这一轮的搜索任务写进去。
+   * 为什么不用 /api/task 去拉：托管模式下页面是 https，拉不动 http://127.0.0.1
+   * （见文件头关于 Private Network Access 的说明），所以任务得在注入时就带下去。
+   *
+   * 注意 activeTask 是模块级的：Target.createTarget 会先触发 targetCreated，
+   * 那时候注入就已经发生了。所以任务必须在 createTarget 之前就设好，
+   * 否则先挂上的那份脚本里没有任务，采集器会空等。
+   */
+  let activeTask = null;
+  function buildInjectSource(task = activeTask) {
+    const baked = task ? {
+      keyword: task.keyword || '',
+      platforms: task.platforms || [],
+      timeoutMs: task.timeoutMs || 20000,
+    } : null;
+    return `window.__mealPickerTask = ${JSON.stringify(baked)};\n${baseSource}`;
+  }
 
   mkdirSync(profileDir, { recursive: true });
 
@@ -175,7 +214,13 @@ export async function startManagedBrowser({
 
   /** targetId → 该页面会话的发送函数 */
   const sessions = new Map();
-  const injected = new Set();
+  /** sessionId → targetId，回传时要认得出是哪个平台页 */
+  const sessionTargets = new Map();
+  /** targetId → 该页面的 URL（页面自己会跳转，靠事件跟一下） */
+  const targetUrls = new Map();
+  /** 回传通道是否建立成功（诊断用） */
+  let bindingOk = 0;
+  let bindingFail = null;
 
   async function ensureSession(targetId) {
     if (sessions.has(targetId)) return sessions.get(targetId);
@@ -186,22 +231,45 @@ export async function startManagedBrowser({
     } catch {
       return null;
     }
+    sessionTargets.set(sessionId, targetId);
     const send = (method, params) => cdp.raw(method, params, sessionId);
     try {
       await send('Page.enable');
     } catch { /* 有些目标类型不支持 */ }
+    try {
+      // Runtime 域开着才会把 bindingCalled 事件发过来
+      await send('Runtime.enable');
+      // 采集器回传价格的通道。页面调用 window.__mealPickerRelay(payload)，
+      // 数据走 DevTools 通道回到这里 —— 不经过网络，所以不受
+      // CORS / Private Network Access / 混合内容 / 页面 CSP 影响。
+      await send('Runtime.addBinding', { name: BINDING_NAME });
+      bindingOk++;
+    } catch (e) {
+      // 老版本浏览器可能不支持；采集器会退回 fetch（只在本机 http 页面上有效）
+      bindingFail = e.message;
+      log(`⚠ 回传通道没能建立（${e.message}），托管模式下可能收不到价格`);
+    }
     sessions.set(targetId, send);
     return send;
   }
 
-  /** 把采集器挂到某个页面：以后每次导航都在 document_start 先跑它 */
-  async function injectInto(targetId) {
-    if (injected.has(targetId)) return true;
+  /**
+   * 把采集器挂到某个页面：以后每次导航都在 document_start 先跑它。
+   *
+   * 关键：`targetCreated` 事件里挂的那一次，脚本里还没有任务
+   * （那时 open() 还没来得及设 activeTask）。所以这里不按 target 去重，
+   * 而是每次都追加一份带当前任务的脚本 —— addScriptToEvaluateOnNewDocument
+   * 是"以后每次导航都跑"，后加的那份会覆盖先加的，顺序正好。
+   */
+  const injectedTask = new Map();
+  async function injectInto(targetId, task = activeTask) {
     const send = await ensureSession(targetId);
     if (!send) return false;
+    const stamp = task ? `${task.keyword}|${(task.platforms || []).join(',')}` : '';
+    if (injectedTask.get(targetId) === stamp) return true;   // 同一轮已经挂过
     try {
-      await send('Page.addScriptToEvaluateOnNewDocument', { source: injectSource });
-      injected.add(targetId);
+      await send('Page.addScriptToEvaluateOnNewDocument', { source: buildInjectSource(task) });
+      injectedTask.set(targetId, stamp);
       return true;
     } catch {
       return false;
@@ -210,22 +278,69 @@ export async function startManagedBrowser({
 
   cdp.on('Target.targetCreated', (p) => {
     if (p.targetInfo && p.targetInfo.type === 'page') {
+      targetUrls.set(p.targetInfo.targetId, p.targetInfo.url || '');
       injectInto(p.targetInfo.targetId).catch(() => {});
     }
+  });
+  cdp.on('Target.targetInfoChanged', (p) => {
+    if (p.targetInfo) targetUrls.set(p.targetInfo.targetId, p.targetInfo.url || '');
   });
   cdp.on('Target.targetDestroyed', (p) => {
     if (p && p.targetId) {
       sessions.delete(p.targetId);
-      injected.delete(p.targetId);
+      injectedTask.delete(p.targetId);
+      targetUrls.delete(p.targetId);
+      for (const [sid, tid] of sessionTargets) if (tid === p.targetId) sessionTargets.delete(sid);
     }
   });
 
-  /** 打开一批 URL，每个都在注入生效之后再导航 */
-  async function open(urls, { focus = true } = {}) {
+  /* 采集器回传：bindingCalled 里带着平台页塞进来的 JSON */
+  cdp.on('Runtime.bindingCalled', (p, sessionId) => {
+    if (!p || p.name !== BINDING_NAME) return;
+    let payload;
+    try { payload = JSON.parse(p.payload); } catch { return; }
+    const targetId = sessionTargets.get(sessionId);
+    if (onCollect) {
+      try { onCollect(payload, { targetId, url: targetUrls.get(targetId) || '' }); } catch { /* ignore */ }
+    }
+  });
+
+  /**
+   * 打开一批 URL，每个都在注入生效之后再导航。
+   *
+   * 已经开着的同域名页面会被复用（只是换个搜索词重新导航）——
+   * 这样第二轮、第三轮比价不会攒出一堆标签页，登录态也一直在。
+   */
+  async function open(urls, { focus = true, task = null } = {}) {
+    // 必须在 createTarget 之前设好：targetCreated 事件一到，注入就发生了
+    activeTask = task;
     const ids = [];
     for (const url of urls) {
-      const { targetId } = await cdp.raw('Target.createTarget', { url: 'about:blank' });
-      const ok = await injectInto(targetId);
+      let host = '';
+      try { host = new URL(url).host; } catch { /* 用不上 */ }
+
+      // 找找有没有已经开着的同站页面
+      let targetId = null;
+      if (host) {
+        for (const [tid, u] of targetUrls) {
+          try { if (u && new URL(u).host === host && !ids.includes(tid)) { targetId = tid; break; } } catch { /* ignore */ }
+        }
+      }
+
+      if (targetId) {
+        // 复用：先挂上新任务的注入脚本，再导航过去（导航会重新跑一遍采集器）
+        const send = await ensureSession(targetId);
+        if (send) {
+          try { await send('Page.addScriptToEvaluateOnNewDocument', { source: buildInjectSource(task) }); } catch { /* ignore */ }
+          try { await send('Page.navigate', { url }); } catch { /* ignore */ }
+          ids.push(targetId);
+          continue;
+        }
+      }
+
+      const created = await cdp.raw('Target.createTarget', { url: 'about:blank' });
+      targetId = created.targetId;
+      const ok = await injectInto(targetId, task);
       if (!ok) log(`⚠ 采集器没能挂到 ${url}，这个平台可能采不到`);
       const send = await ensureSession(targetId);
       if (send) {
@@ -268,6 +383,8 @@ export async function startManagedBrowser({
     open,
     openPages,
     injectInto,
+    /** 回传通道状态，诊断用 */
+    get binding() { return { ok: bindingOk, fail: bindingFail }; },
     stop,
     get alive() { return !cdp.closed && child.exitCode === null; },
   };

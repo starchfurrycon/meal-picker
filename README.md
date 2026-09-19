@@ -47,6 +47,39 @@ node scripts/probe-extension.mjs   # 命令行加载扩展：Chrome ✘ / Edge �
 node scripts/probe-launch.mjs      # CDP 注入：Chrome ✔
 ```
 
+### 价格是怎么从平台页回到工具里的？
+
+这一段值得单独讲，因为它踩过一个很隐蔽的坑，**表面上看一切正常，实际上一条价格都收不到**。
+
+平台页全是 `https`，中继是 `http://127.0.0.1:8765`。直觉上以为这是"混合内容"问题，
+其实不是 —— `127.0.0.1` 在 Chrome 眼里属于可信来源。真正拦路的是
+**Private Network Access**：公网页面默认不允许访问回环地址。在真实的美团页面上实测：
+
+```
+Access to fetch at 'http://127.0.0.1:61754/api/health' from origin
+'https://waimai.meituan.com' has been blocked by CORS policy:
+Permission was denied for this request to access the `loopback` address
+```
+
+所以采集器就算从页面里读到了价格，也发不出来。油猴脚本不受影响（`GM_xmlhttpRequest`
+是扩展的特权请求），但托管浏览器这条路必须另想办法。
+
+解决办法是走 **CDP 的 `Runtime.addBinding`**：中继通过调试协议往页面里注入一个
+`window.__mealPickerRelay()`，采集器调用它，数据经 DevTools 通道回到中继 ——
+完全不经过网络栈，因此 CORS、PNA、混合内容、页面 CSP 一个都管不着它。
+
+搜索任务同理，不能靠页面回头来拉（拉不动），所以中继在注入脚本时就把这一轮的关键词
+一起写进去。
+
+```bash
+node scripts/probe-relay-from-platform.mjs   # 真实平台页上验证：fetch 被 PNA 拦
+node scripts/probe-binding-timing.mjs        # 验证 binding 在 document_start 就可用
+node scripts/probe-collector-live.mjs        # 端到端：注入 → 采集 → 回传 → 进价格表
+```
+
+`e2e-browser.mjs` 里有两条专门守这个的断言（回传通道挂上了、任务写进注入脚本了），
+因为这两个点任何一个坏掉，界面上的表现都只是"没找到价格"，很难查。
+
 如果你更想用自己的浏览器（书签、已登录状态都在里面），到
 「设置 → 数据来源 → 采集方式」里切成「用我自己的浏览器」，再按下面的步骤装一次油猴脚本即可。
 
@@ -242,6 +275,9 @@ npm run diagnose URL   # 打开任意 URL 打印几何 / 令牌 / 报错，排�
 npm run probe          # 实时数据可行性探测（只读）
 npm run probe:ext      # 命令行加载扩展的可行性探测（只读）
 npm run probe:launch   # CDP 注入的可行性探测（只读）
+npm run probe:channel  # 真实平台页上验证回传通道（只读）
+npm run probe:binding  # 验证 binding 在 document_start 就可用（只读）
+npm run probe:live     # 端到端：注入 → 采集 → 回传 → 进价格表（只读）
 ```
 
 浏览器端到端自检需要 **Node 22+**（用全局 `WebSocket` 连 CDP）与本机 Chrome/Edge；

@@ -30,7 +30,7 @@ function __mealPickerCollectorCore() {
 
   const RELAY_PORT = __RELAY_PORT__;
   const RELAY = `http://127.0.0.1:${RELAY_PORT}`;
-  const VERSION = '2.1.0';
+  const VERSION = '2.1.1';
   const LOG = (...a) => console.log('%c[选餐采集]', 'color:#FF8A3D;font-weight:700', ...a);
 
   /** 当前平台判定 */
@@ -569,6 +569,28 @@ function __mealPickerCollectorCore() {
   const HAS_GM = typeof GM_xmlhttpRequest === 'function'
     || (typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function');
 
+  /* ── 回传通道 ──────────────────────────────────────────────
+     平台页都是 https，中继是 http://127.0.0.1。实测在真实平台页上，
+     页面里的 fetch 会被 Chrome 的 Private Network Access 直接拒掉：
+
+       Access to fetch at 'http://127.0.0.1:PORT/api/health' from origin
+       'https://waimai.meituan.com' has been blocked by CORS policy:
+       Permission was denied for this request to access the `loopback` address
+
+     所以托管浏览器（中继自己拉起来的那只）改用 CDP binding：中继通过
+     调试协议往页面里注入一个 __mealPickerRelay() 函数，调用它数据会走
+     DevTools 通道回到中继，根本不经过网络栈 —— CORS / PNA / 混合内容 /
+     页面 CSP 全都管不着它。
+
+     油猴脚本那条路走 GM_xmlhttpRequest，它是扩展的特权请求，同样不受限。
+     普通 fetch 只在页面本身就是本地 http 时才用得上（比如自检）。
+     ────────────────────────────────────────────────────────── */
+  const BINDING = typeof window.__mealPickerRelay === 'function' ? window.__mealPickerRelay : null;
+  const HAS_BINDING = !!BINDING;
+  /** 托管模式：任务由中继在注入时就写好，不用再去拉 */
+  const BAKED_TASK = (window.__mealPickerTask && typeof window.__mealPickerTask === 'object')
+    ? window.__mealPickerTask : null;
+
   function request(opts) {
     return new Promise((resolve, reject) => {
       if (HAS_GM) {
@@ -607,7 +629,18 @@ function __mealPickerCollectorCore() {
     });
   }
 
+  /** 走 CDP 通道回传；成功返回 true */
+  function sendViaBinding(payload) {
+    if (!HAS_BINDING) return false;
+    try {
+      BINDING(JSON.stringify(payload));
+      return true;
+    } catch { return false; }
+  }
+
   async function relayAlive() {
+    // binding 是中继挂上来的，它在就说明中继活着
+    if (HAS_BINDING) return true;
     try {
       const r = await request({ url: `${RELAY}/api/health`, timeout: 3000 });
       return r.ok;
@@ -615,6 +648,9 @@ function __mealPickerCollectorCore() {
   }
 
   async function fetchTask() {
+    // 托管模式：任务在注入时就写好了，直接拿
+    if (BAKED_TASK && !taskConsumed) return BAKED_TASK;
+    if (HAS_BINDING) return null; // 托管模式但这一轮没有任务，别去 fetch 撞 PNA
     try {
       const r = await request({ url: `${RELAY}/api/task?platform=${PLATFORM}`, timeout: 4000 });
       if (!r.ok) return null;
@@ -632,26 +668,31 @@ function __mealPickerCollectorCore() {
       version: VERSION,
       ...extra,
     };
-    const r = await request({
-      method: 'POST',
-      url: `${RELAY}/api/prices`,
-      body: JSON.stringify(payload),
-      timeout: 10000,
-    });
-    return r.ok;
+    if (sendViaBinding(payload)) return true;
+    try {
+      const r = await request({
+        method: 'POST',
+        url: `${RELAY}/api/prices`,
+        body: JSON.stringify(payload),
+        timeout: 10000,
+      });
+      return r.ok;
+    } catch { return false; }
   }
 
   async function sayHello() {
+    const payload = {
+      version: VERSION,
+      ua: navigator.userAgent,
+      platforms: [PLATFORM],
+      page: location.href,
+    };
+    if (sendViaBinding({ kind: 'hello', ...payload })) return;
     try {
       await request({
         method: 'POST',
         url: `${RELAY}/api/hello`,
-        body: JSON.stringify({
-          version: VERSION,
-          ua: navigator.userAgent,
-          platforms: [PLATFORM],
-          page: location.href,
-        }),
+        body: JSON.stringify(payload),
         timeout: 4000,
       });
     } catch { /* 中继没开就算了 */ }
@@ -708,10 +749,13 @@ function __mealPickerCollectorCore() {
   }
 
   let running = false;
+  /** 注入时就带下来的任务只认一次，免得反复采 */
+  let taskConsumed = false;
 
   async function runForTask(task) {
     if (running) return;
     running = true;
+    if (BAKED_TASK && task === BAKED_TASK) taskConsumed = true;
     try {
       const keyword = task.keyword || currentKeyword();
       LOG(`开始采集「${keyword}」`);
@@ -743,6 +787,8 @@ function __mealPickerCollectorCore() {
   let pollTimer = null;
   function startPolling() {
     if (pollTimer) return;
+    // 托管模式没有带任务下来，就说明这一轮不需要采，别空转
+    if (HAS_BINDING && !BAKED_TASK) return;
     let tries = 0;
     pollTimer = setInterval(async () => {
       tries++;

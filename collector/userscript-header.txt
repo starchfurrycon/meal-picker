@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         选餐 · 实时价格采集器
 // @namespace    https://github.com/starchfurrycon/meal-picker
-// @version      2.1.0
+// @version      2.1.1
 // @description  在你自己的浏览器里、用你自己的登录态，采集各外卖平台搜索页的真实价格，回传给本地「选餐」工具做实时比价。不抓取、不代替登录、不绕过风控——只读取页面自己请求回来的数据。
 // @author       选餐
 // @match        *://*.meituan.com/*
