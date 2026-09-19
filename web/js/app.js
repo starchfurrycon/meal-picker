@@ -437,7 +437,7 @@ globalThis.__mealPicker = {
   relayBase: () => relayBase(store.settings),
   probeRelay: () => probeRelay(store.settings),
   platformList: () => PLATFORMS.map((p) => p.id),
-  version: '2.1.0',
+  version: '2.1.1',
 };
 
 boot().catch((err) => {
